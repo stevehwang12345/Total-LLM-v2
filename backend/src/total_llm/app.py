@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -28,7 +29,9 @@ async def lifespan(app: FastAPI):
     await init_db(app.state.db_pool)
     statuses["database"] = "up"
 
-    app.state.redis = Redis(host=s.redis.host, port=s.redis.port, password=s.redis.password, decode_responses=True)
+    redis_host = os.environ.get("REDIS_HOST", s.redis.host)
+    redis_port = int(os.environ.get("REDIS_PORT", s.redis.port))
+    app.state.redis = Redis(host=redis_host, port=redis_port, password=s.redis.password or None, decode_responses=True)
     try:
         await app.state.redis.ping()
         statuses["redis"] = "up"
@@ -38,12 +41,16 @@ async def lifespan(app: FastAPI):
     app.state.embedding_service = {"model_name": s.embedding.model_name, "device": s.embedding.device}
     statuses["embedding"] = "up"
 
-    app.state.qdrant_service = QdrantClient(host=s.qdrant.host, port=s.qdrant.port)
+    qdrant_host = os.environ.get("QDRANT_HOST", s.qdrant.host)
+    qdrant_port = int(os.environ.get("QDRANT_PORT", s.qdrant.port))
+    app.state.qdrant_service = QdrantClient(host=qdrant_host, port=qdrant_port)
     statuses["qdrant"] = "up"
 
-    llm = AsyncOpenAI(base_url=s.llm.base_url, api_key="dummy")
+    llm_base = os.environ.get("VLLM_BASE_URL", s.llm.base_url)
+    vlm_base = os.environ.get("VLM_BASE_URL", s.vlm.base_url)
+    llm = AsyncOpenAI(base_url=llm_base, api_key="dummy")
     app.state.llm_client = llm
-    app.state.vlm_client = llm if s.vlm.base_url == s.llm.base_url else AsyncOpenAI(base_url=s.vlm.base_url, api_key="dummy")
+    app.state.vlm_client = llm if vlm_base == llm_base else AsyncOpenAI(base_url=vlm_base, api_key="dummy")
     statuses["llm"] = "up"
     statuses["vlm"] = "up"
     app.state.service_status = statuses

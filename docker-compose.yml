@@ -126,13 +126,13 @@ services:
       JWT_SECRET: change-me-in-production
     depends_on:
       vllm:
-        condition: service_healthy
+        condition: service_started
       qdrant:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
       postgres:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9002/health"]
       interval: 20s
@@ -150,7 +150,7 @@ services:
       - "9004:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - total-llm-v2-network
 

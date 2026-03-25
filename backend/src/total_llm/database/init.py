@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import asyncpg
@@ -11,12 +12,17 @@ async def create_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         cfg = get_settings().database
+        host = os.environ.get("POSTGRES_HOST", cfg.host)
+        port = int(os.environ.get("POSTGRES_PORT", cfg.port))
+        database = os.environ.get("POSTGRES_DB", cfg.database)
+        user = os.environ.get("POSTGRES_USER", cfg.username)
+        password = os.environ.get("POSTGRES_PASSWORD", cfg.password)
         _pool = await asyncpg.create_pool(
-            host=cfg.host,
-            port=cfg.port,
-            database=cfg.database,
-            user=cfg.username,
-            password=cfg.password,
+            host=host,
+            port=port,
+            database=database,
+            user=user,
+            password=password,
             min_size=1,
             max_size=10,
         )
