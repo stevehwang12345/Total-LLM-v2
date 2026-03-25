@@ -44,7 +44,7 @@ export const Route = createFileRoute('/_authenticated/alarms/')({
 })
 
 interface Alarm {
-  id: string
+  alarm_id: string
   device_id: string
   severity: string
   description: string
@@ -110,22 +110,22 @@ function AlarmsPage() {
     eventSourceRef.current = es
 
     es.onmessage = (event) => {
-      try {
-        const newAlarm: Alarm = JSON.parse(event.data)
-        newAlarm._isNew = true
-        setAlarms((prev) => [newAlarm, ...prev])
-        fetchStats()
-        toast.info('새 알람', { description: newAlarm.description })
+       try {
+         const newAlarm: Alarm = JSON.parse(event.data)
+         newAlarm._isNew = true
+         setAlarms((prev) => [newAlarm, ...prev])
+         fetchStats()
+         toast.info('새 알람', { description: newAlarm.description })
 
-        setTimeout(() => {
-          setAlarms((prev) =>
-            prev.map((a) => (a.id === newAlarm.id ? { ...a, _isNew: false } : a))
-          )
-        }, 3000)
-      } catch {
-        void 0
-      }
-    }
+         setTimeout(() => {
+           setAlarms((prev) =>
+             prev.map((a) => (a.alarm_id === newAlarm.alarm_id ? { ...a, _isNew: false } : a))
+           )
+         }, 3000)
+       } catch {
+         void 0
+       }
+     }
 
     es.onerror = () => {
       es.close()
@@ -136,24 +136,24 @@ function AlarmsPage() {
     }
   }, [fetchStats])
 
-  const handleAcknowledge = async (alarmId: string) => {
-    setAcknowledgingId(alarmId)
-    try {
-      const res = await fetch(`/api/alarms/${alarmId}/acknowledge`, {
-        method: 'POST',
-      })
-      if (!res.ok) throw new Error('확인 처리 실패')
-      setAlarms((prev) =>
-        prev.map((a) => (a.id === alarmId ? { ...a, acknowledged: true } : a))
-      )
-      fetchStats()
-      toast.success('알람 확인 완료')
-    } catch {
-      toast.error('알람 확인 실패')
-    } finally {
-      setAcknowledgingId(null)
-    }
-  }
+   const handleAcknowledge = async (alarmId: string) => {
+     setAcknowledgingId(alarmId)
+     try {
+       const res = await fetch(`/api/alarms/${alarmId}/acknowledge`, {
+         method: 'POST',
+       })
+       if (!res.ok) throw new Error('확인 처리 실패')
+       setAlarms((prev) =>
+         prev.map((a) => (a.alarm_id === alarmId ? { ...a, acknowledged: true } : a))
+       )
+       fetchStats()
+       toast.success('알람 확인 완료')
+     } catch {
+       toast.error('알람 확인 실패')
+     } finally {
+       setAcknowledgingId(null)
+     }
+   }
 
   const filteredAlarms =
     filter === 'all' ? alarms : alarms.filter((a) => a.severity === filter)
@@ -271,16 +271,16 @@ function AlarmsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAlarms.map((alarm) => {
-                      const sevCfg = SEVERITY_MAP[alarm.severity] || SEVERITY_MAP['정보']
-                      return (
-                        <TableRow
-                          key={alarm.id}
-                          className={cn(
-                            alarm._isNew &&
-                              'animate-in fade-in slide-in-from-top-2 bg-primary/5'
-                          )}
-                        >
+                     {filteredAlarms.map((alarm) => {
+                       const sevCfg = SEVERITY_MAP[alarm.severity] || SEVERITY_MAP['정보']
+                       return (
+                         <TableRow
+                           key={alarm.alarm_id}
+                           className={cn(
+                             alarm._isNew &&
+                               'animate-in fade-in slide-in-from-top-2 bg-primary/5'
+                           )}
+                         >
                           <TableCell className='text-xs'>
                             {new Date(alarm.created_at).toLocaleString('ko-KR')}
                           </TableCell>
@@ -295,27 +295,27 @@ function AlarmsPage() {
                           <TableCell className='max-w-xs truncate text-sm'>
                             {alarm.description}
                           </TableCell>
-                          <TableCell className='text-right'>
-                            {alarm.acknowledged ? (
-                              <Badge variant='secondary' className='gap-1'>
-                                <CheckCircle2 className='size-3' />
-                                확인됨
-                              </Badge>
-                            ) : (
-                              <Button
-                                size='sm'
-                                variant='outline'
-                                onClick={() => handleAcknowledge(alarm.id)}
-                                disabled={acknowledgingId === alarm.id}
-                              >
-                                {acknowledgingId === alarm.id ? (
-                                  <Loader2 className='size-3 animate-spin' />
-                                ) : (
-                                  '확인'
-                                )}
-                              </Button>
-                            )}
-                          </TableCell>
+                           <TableCell className='text-right'>
+                             {alarm.acknowledged ? (
+                               <Badge variant='secondary' className='gap-1'>
+                                 <CheckCircle2 className='size-3' />
+                                 확인됨
+                               </Badge>
+                             ) : (
+                               <Button
+                                 size='sm'
+                                 variant='outline'
+                                 onClick={() => handleAcknowledge(alarm.alarm_id)}
+                                 disabled={acknowledgingId === alarm.alarm_id}
+                               >
+                                 {acknowledgingId === alarm.alarm_id ? (
+                                   <Loader2 className='size-3 animate-spin' />
+                                 ) : (
+                                   '확인'
+                                 )}
+                               </Button>
+                             )}
+                           </TableCell>
                         </TableRow>
                       )
                     })}

@@ -38,10 +38,10 @@ export const Route = createFileRoute('/_authenticated/documents/')({
 })
 
 interface Document {
-  id: string
+  doc_id: string
   filename: string
   size: number
-  uploaded_at: string
+  created_at: string
   content_type?: string
   chunk_count?: number
 }
@@ -136,7 +136,7 @@ function DocumentsPage() {
     if (!deleteTarget) return
     setIsDeleting(true)
     try {
-      const res = await fetch(`/api/documents/${deleteTarget.id}`, {
+      const res = await fetch(`/api/documents/${deleteTarget.doc_id}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error('삭제 실패')
@@ -244,28 +244,28 @@ function DocumentsPage() {
                       <TableHead className='text-right'>작업</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
-                    {documents.map((doc) => (
-                      <TableRow key={doc.id}>
-                        <TableCell>
-                          <div className='flex items-center gap-2'>
-                            {getFileIcon(doc.filename)}
-                            <span className='text-sm font-medium'>
-                              {doc.filename}
-                            </span>
-                            {doc.chunk_count && (
-                              <Badge variant='secondary' className='text-xs'>
-                                {doc.chunk_count} 청크
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className='text-sm text-muted-foreground'>
-                          {formatFileSize(doc.size)}
-                        </TableCell>
-                        <TableCell className='text-xs text-muted-foreground'>
-                          {new Date(doc.uploaded_at).toLocaleString('ko-KR')}
-                        </TableCell>
+                   <TableBody>
+                     {documents.map((doc) => (
+                       <TableRow key={doc.doc_id}>
+                         <TableCell>
+                           <div className='flex items-center gap-2'>
+                             {getFileIcon(doc.filename)}
+                             <span className='text-sm font-medium'>
+                               {doc.filename}
+                             </span>
+                             {doc.chunk_count && (
+                               <Badge variant='secondary' className='text-xs'>
+                                 {doc.chunk_count} 청크
+                               </Badge>
+                             )}
+                           </div>
+                         </TableCell>
+                         <TableCell className='text-sm text-muted-foreground'>
+                           {formatFileSize(doc.size)}
+                         </TableCell>
+                         <TableCell className='text-xs text-muted-foreground'>
+                           {new Date(doc.created_at).toLocaleString('ko-KR')}
+                         </TableCell>
                         <TableCell className='text-right'>
                           <Button
                             variant='ghost'

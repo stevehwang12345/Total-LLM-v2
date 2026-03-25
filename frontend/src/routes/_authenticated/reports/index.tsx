@@ -52,11 +52,12 @@ export const Route = createFileRoute('/_authenticated/reports/')({
 })
 
 interface Report {
-  id: string
+  report_id: string
   title: string
   type: string
   created_at: string
   status?: string
+  download_url?: string
 }
 
 const REPORT_TYPES = [
@@ -113,15 +114,19 @@ function ReportsPage() {
     }
   }
 
-  const handleDownload = (reportId: string) => {
-    window.open(`/api/reports/${reportId}/download`, '_blank')
+  const handleDownload = (report: Report) => {
+    if (report.download_url) {
+      window.open(report.download_url, '_blank')
+    } else {
+      window.open(`/api/reports/${report.report_id}/download`, '_blank')
+    }
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
     setIsDeleting(true)
     try {
-      const res = await fetch(`/api/reports/${deleteTarget.id}`, {
+      const res = await fetch(`/api/reports/${deleteTarget.report_id}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error('삭제 실패')
@@ -230,9 +235,9 @@ function ReportsPage() {
                     <TableHead className='text-right'>작업</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {reports.map((report) => (
-                    <TableRow key={report.id}>
+                 <TableBody>
+                   {reports.map((report) => (
+                     <TableRow key={report.report_id}>
                       <TableCell>
                         <div className='flex items-center gap-2'>
                           <FileText className='size-4 text-muted-foreground' />
@@ -265,16 +270,16 @@ function ReportsPage() {
                             : '생성 중'}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className='flex items-center justify-end gap-1'>
-                          <Button
-                            variant='ghost'
-                            size='icon'
-                            className='size-8'
-                            onClick={() => handleDownload(report.id)}
-                          >
-                            <Download className='size-4' />
-                          </Button>
+                       <TableCell>
+                         <div className='flex items-center justify-end gap-1'>
+                           <Button
+                             variant='ghost'
+                             size='icon'
+                             className='size-8'
+                             onClick={() => handleDownload(report)}
+                           >
+                             <Download className='size-4' />
+                           </Button>
                           <Button
                             variant='ghost'
                             size='icon'

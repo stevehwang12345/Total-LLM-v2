@@ -124,6 +124,11 @@ services:
       POSTGRES_PASSWORD: total_llm_dev
       CORS_ORIGINS: '["http://localhost:9004", "http://frontend"]'
       JWT_SECRET: change-me-in-production
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+      - ./data/uploads:/app/data/uploads
+      - ./data/reports:/app/data/reports
     depends_on:
       vllm:
         condition: service_started

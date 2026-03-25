@@ -64,7 +64,7 @@ function ChatPage() {
     if (!trimmed || isLoading) return
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
       role: 'user',
       content: trimmed,
       timestamp: new Date(),
@@ -73,7 +73,7 @@ function ChatPage() {
     setInput('')
     setIsLoading(true)
 
-    const assistantId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
     setMessages((prev) => [
       ...prev,
       { id: assistantId, role: 'assistant', content: '', timestamp: new Date() },

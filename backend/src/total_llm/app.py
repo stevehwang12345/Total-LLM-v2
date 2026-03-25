@@ -1,10 +1,13 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
-from qdrant_client import QdrantClient
+from total_llm.services.qdrant import QdrantService
 from redis.asyncio import Redis
 
 from total_llm.api.alarms import router as alarms_router
@@ -38,12 +41,19 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    app.state.embedding_service = {"model_name": s.embedding.model_name, "device": s.embedding.device}
-    statuses["embedding"] = "up"
+    try:
+        from total_llm.services.embedding import EmbeddingService
+        app.state.embedding_service = EmbeddingService()
+        statuses["embedding"] = "up"
+    except Exception:
+        logger.exception("Failed to load embedding model")
+        app.state.embedding_service = None
 
     qdrant_host = os.environ.get("QDRANT_HOST", s.qdrant.host)
     qdrant_port = int(os.environ.get("QDRANT_PORT", s.qdrant.port))
-    app.state.qdrant_service = QdrantClient(host=qdrant_host, port=qdrant_port)
+    qdrant_svc = QdrantService(host=qdrant_host, port=qdrant_port)
+    await qdrant_svc.ensure_collection()
+    app.state.qdrant_service = qdrant_svc
     statuses["qdrant"] = "up"
 
     llm_base = os.environ.get("VLLM_BASE_URL", s.llm.base_url)

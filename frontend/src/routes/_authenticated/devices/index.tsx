@@ -47,10 +47,12 @@ export const Route = createFileRoute('/_authenticated/devices/')({
 })
 
 interface Device {
-  id: string
   device_id: string
-  type: string
+  device_type: string
+  manufacturer?: string
   ip_address: string
+  port?: number
+  protocol?: string
   location: string
   status: string
   last_seen?: string
@@ -292,37 +294,37 @@ function DevicesPage() {
               const StatusIcon = statusCfg.icon
               return (
                 <Card
-                  key={device.id || device.device_id}
-                  className={cn(
-                    'cursor-pointer transition-shadow hover:shadow-md',
-                    selectedDevice?.device_id === device.device_id && 'ring-2 ring-primary'
-                  )}
-                  onClick={() =>
-                    setSelectedDevice(
-                      selectedDevice?.device_id === device.device_id ? null : device
-                    )
-                  }
-                >
-                  <CardHeader className='pb-3'>
-                    <div className='flex items-center justify-between'>
-                      <div className='flex items-center gap-2'>
-                        <DeviceIcon type={device.type} />
-                        <CardTitle className='text-base'>
-                          {device.device_id}
-                        </CardTitle>
-                      </div>
-                      <Badge variant='outline' className={statusCfg.className}>
-                        <StatusIcon className='mr-1 size-3' />
-                        {statusCfg.label}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className='space-y-2'>
-                    <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                      <Badge variant='secondary' className='text-xs'>
-                        {device.type}
-                      </Badge>
-                    </div>
+                   key={device.device_id}
+                   className={cn(
+                     'cursor-pointer transition-shadow hover:shadow-md',
+                     selectedDevice?.device_id === device.device_id && 'ring-2 ring-primary'
+                   )}
+                   onClick={() =>
+                     setSelectedDevice(
+                       selectedDevice?.device_id === device.device_id ? null : device
+                     )
+                   }
+                 >
+                   <CardHeader className='pb-3'>
+                     <div className='flex items-center justify-between'>
+                       <div className='flex items-center gap-2'>
+                         <DeviceIcon type={device.device_type} />
+                         <CardTitle className='text-base'>
+                           {device.device_id}
+                         </CardTitle>
+                       </div>
+                       <Badge variant='outline' className={statusCfg.className}>
+                         <StatusIcon className='mr-1 size-3' />
+                         {statusCfg.label}
+                       </Badge>
+                     </div>
+                   </CardHeader>
+                   <CardContent className='space-y-2'>
+                     <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+                       <Badge variant='secondary' className='text-xs'>
+                         {device.device_type}
+                       </Badge>
+                     </div>
                     <div className='flex items-center gap-1.5 text-sm text-muted-foreground'>
                       <Wifi className='size-3.5' />
                       {device.ip_address}

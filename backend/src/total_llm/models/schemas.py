@@ -21,11 +21,19 @@ class AnalysisRequest(BaseModel):
 
 
 class AnalysisResult(BaseModel):
-    qa_results: dict
-    incident_type: str
-    severity: str
-    confidence: float
-    report: str
+    qa_results: dict = {}
+    incident_type: str = "정상활동"
+    incident_type_en: str = "Normal"
+    severity: str = "정보"
+    risk_level: int = 1
+    confidence: float = 0.5
+    report: str = ""
+    recommended_actions: list[str] = []
+    sop_reference: str | None = None
+    location: str | None = None
+    timestamp: datetime | None = None
+    summary: str = ""
+    description: str = ""
 
 
 class DeviceModel(BaseModel):

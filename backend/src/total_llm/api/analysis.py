@@ -80,6 +80,15 @@ async def upload_analysis(
         "analysis_id": analysis_id,
         "filename": file.filename,
         "location": location,
+        "incident_type": payload.get("incident_type", "정상활동"),
+        "incident_type_en": payload.get("incident_type_en", "Normal"),
+        "severity": payload.get("severity", "정보"),
+        "risk_level": payload.get("risk_level", 1),
+        "confidence": payload.get("confidence", 0.5),
+        "qa_results": payload.get("qa_results", {}),
+        "report": payload.get("report", ""),
+        "recommended_actions": payload.get("recommended_actions", []),
+        "sop_reference": payload.get("sop_reference"),
         "result": payload,
     }
 
@@ -122,7 +131,11 @@ async def list_analyses(
     await _ensure_analysis_table(db_pool)
 
     query = (
-        "SELECT analysis_id, filename, size, content_type, location, created_at "
+        "SELECT analysis_id, filename, size, content_type, location, created_at, "
+        "COALESCE(result->>'incident_type', '정상활동') AS incident_type, "
+        "COALESCE(result->>'severity', '정보') AS severity, "
+        "COALESCE((result->>'risk_level')::int, 1) AS risk_level, "
+        "COALESCE((result->>'confidence')::float, 0.5) AS confidence "
         "FROM analyses ORDER BY created_at DESC LIMIT $1"
     )
     try:

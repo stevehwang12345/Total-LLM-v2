@@ -11,29 +11,32 @@ logger = logging.getLogger(__name__)
 
 
 class QdrantService:
-    def __init__(self) -> None:
+    def __init__(self, host: str | None = None, port: int | None = None) -> None:
         settings = get_settings()
         self._collection_name = settings.qdrant.collection_name
-        self._vector_size = 1024
-        self._client = AsyncQdrantClient(
-            host=settings.qdrant.host,
-            port=settings.qdrant.port,
-        )
+        self._vector_size = settings.qdrant.vector_size
+        self._host = host or settings.qdrant.host
+        self._port = port or settings.qdrant.port
+        self._client = AsyncQdrantClient(host=self._host, port=self._port)
 
     async def ensure_collection(self) -> None:
+        import aiohttp
+        base = f"http://{self._host}:{self._port}"
         try:
-            exists = await self._client.collection_exists(self._collection_name)
-            if exists:
-                return
-
-            await self._client.create_collection(
-                collection_name=self._collection_name,
-                vectors_config=models.VectorParams(
-                    size=self._vector_size,
-                    distance=models.Distance.COSINE,
-                ),
-            )
-            logger.info("Created Qdrant collection: %s", self._collection_name)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{base}/collections/{self._collection_name}") as resp:
+                    if resp.status == 200:
+                        logger.info("Qdrant collection exists: %s", self._collection_name)
+                        return
+                async with session.put(
+                    f"{base}/collections/{self._collection_name}",
+                    json={"vectors": {"size": self._vector_size, "distance": "Cosine"}},
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info("Created Qdrant collection: %s", self._collection_name)
+                    else:
+                        body = await resp.text()
+                        logger.error("Failed to create collection: %s %s", resp.status, body)
         except Exception:
             logger.exception("Failed to ensure Qdrant collection")
             raise
@@ -52,14 +55,14 @@ class QdrantService:
         search_filter = self._to_filter(filter)
 
         try:
-            return await self._client.search(
+            result = await self._client.query_points(
                 collection_name=self._collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=limit,
                 query_filter=search_filter,
                 with_payload=True,
-                with_vectors=False,
             )
+            return result.points
         except Exception:
             logger.exception("Qdrant search failed")
             raise
