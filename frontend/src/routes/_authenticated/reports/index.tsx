@@ -8,6 +8,10 @@ import {
   Loader2,
   FileText,
   Calendar,
+  ClipboardList,
+  AlertTriangle,
+  Wrench,
+  BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
@@ -45,6 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
 export const Route = createFileRoute('/_authenticated/reports/')({
@@ -61,17 +67,32 @@ interface Report {
 }
 
 const REPORT_TYPES = [
-  { value: 'daily', label: '일일 보고서' },
-  { value: 'weekly', label: '주간 보고서' },
-  { value: 'incident', label: '사건 보고서' },
+  { value: 'daily_log', label: '관제일지 (일간)', icon: ClipboardList },
+  { value: 'incident', label: '사건보고서', icon: AlertTriangle },
+  { value: 'equipment', label: '장비점검일지', icon: Wrench },
+  { value: 'monthly', label: '월간보안보고서', icon: BarChart3 },
 ]
+
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  daily_log: '관제일지',
+  incident: '사건보고서',
+  equipment: '장비점검일지',
+  monthly: '월간보안보고서',
+  daily: '일일 보고서',
+  weekly: '주간 보고서',
+  security: '보안보고서',
+}
 
 function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [generateOpen, setGenerateOpen] = useState(false)
-  const [reportType, setReportType] = useState('daily')
+  const [reportType, setReportType] = useState('daily_log')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [paramDate, setParamDate] = useState('')
+  const [paramAlarmId, setParamAlarmId] = useState('')
+  const [paramYear, setParamYear] = useState(new Date().getFullYear())
+  const [paramMonth, setParamMonth] = useState(new Date().getMonth() + 1)
   const [deleteTarget, setDeleteTarget] = useState<Report | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -96,15 +117,26 @@ function ReportsPage() {
   const handleGenerate = async () => {
     setIsGenerating(true)
     try {
+      const params: Record<string, unknown> = { type: reportType }
+      if (reportType === 'daily_log' || reportType === 'equipment') {
+        if (paramDate) params.date = paramDate
+      } else if (reportType === 'incident') {
+        if (paramAlarmId) params.alarm_id = paramAlarmId
+      } else if (reportType === 'monthly') {
+        params.year = paramYear
+        params.month = paramMonth
+      }
       const res = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: reportType }),
+        body: JSON.stringify(params),
       })
       if (!res.ok) throw new Error(`생성 실패: ${res.status}`)
       const typeLabel = REPORT_TYPES.find((t) => t.value === reportType)?.label
       toast.success('리포트 생성 요청 완료', { description: typeLabel })
       setGenerateOpen(false)
+      setParamDate('')
+      setParamAlarmId('')
       fetchReports()
     } catch (err) {
       const msg = err instanceof Error ? err.message : '리포트 생성 오류'
@@ -141,7 +173,7 @@ function ReportsPage() {
   }
 
   const getTypeLabel = (type: string) =>
-    REPORT_TYPES.find((t) => t.value === type)?.label || type
+    REPORT_TYPE_LABELS[type] || REPORT_TYPES.find((t) => t.value === type)?.label || type
 
   return (
     <>
@@ -166,19 +198,82 @@ function ReportsPage() {
                   생성할 리포트 유형을 선택하세요
                 </DialogDescription>
               </DialogHeader>
-              <div className='py-4'>
-                <Select value={reportType} onValueChange={setReportType}>
-                  <SelectTrigger className='w-full'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REPORT_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className='space-y-4 py-4'>
+                <div className='grid gap-2'>
+                  <Label>보고서 유형</Label>
+                  <Select value={reportType} onValueChange={setReportType}>
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REPORT_TYPES.map((t) => {
+                        const Icon = t.icon
+                        return (
+                          <SelectItem key={t.value} value={t.value}>
+                            <div className='flex items-center gap-2'>
+                              <Icon className='size-4 text-muted-foreground' />
+                              {t.label}
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {(reportType === 'daily_log' || reportType === 'equipment') && (
+                  <div className='grid gap-2'>
+                    <Label htmlFor='param-date'>
+                      {reportType === 'daily_log' ? '관제 일자' : '점검 일자'}
+                    </Label>
+                    <Input
+                      id='param-date'
+                      type='date'
+                      value={paramDate}
+                      onChange={(e) => setParamDate(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {reportType === 'incident' && (
+                  <div className='grid gap-2'>
+                    <Label htmlFor='param-alarm-id'>관련 알람 ID</Label>
+                    <Input
+                      id='param-alarm-id'
+                      type='text'
+                      placeholder='예: ALM-20260326-001'
+                      value={paramAlarmId}
+                      onChange={(e) => setParamAlarmId(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {reportType === 'monthly' && (
+                  <div className='grid grid-cols-2 gap-3'>
+                    <div className='grid gap-2'>
+                      <Label htmlFor='param-year'>연도</Label>
+                      <Input
+                        id='param-year'
+                        type='number'
+                        min={2020}
+                        max={2030}
+                        value={paramYear}
+                        onChange={(e) => setParamYear(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className='grid gap-2'>
+                      <Label htmlFor='param-month'>월</Label>
+                      <Input
+                        id='param-month'
+                        type='number'
+                        min={1}
+                        max={12}
+                        value={paramMonth}
+                        onChange={(e) => setParamMonth(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button

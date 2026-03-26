@@ -10,6 +10,8 @@ import {
   AlertCircle,
   MapPin,
   Loader2,
+  Activity,
+  Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
@@ -57,6 +59,21 @@ interface Device {
   status: string
   last_seen?: string
   firmware_version?: string
+  security_grade?: string
+  last_health_check?: string
+}
+
+interface HealthResult {
+  status: string
+  latency_ms: number | null
+  checked_at: string
+}
+
+interface DeviceStats {
+  total: number
+  online: number
+  offline: number
+  error: number
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string; icon: typeof Wifi }> = {
@@ -71,6 +88,9 @@ function DevicesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
+  const [healthResults, setHealthResults] = useState<Record<string, HealthResult>>({})
+  const [checkingHealthId, setCheckingHealthId] = useState<string | null>(null)
+  const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null)
 
   const [formDeviceId, setFormDeviceId] = useState('')
   const [formType, setFormType] = useState('CCTV')
@@ -91,9 +111,45 @@ function DevicesPage() {
     }
   }, [])
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/devices/stats')
+      if (res.ok) {
+        setDeviceStats(await res.json())
+      }
+    } catch {
+      void 0
+    }
+  }, [])
+
   useEffect(() => {
     fetchDevices()
-  }, [fetchDevices])
+    fetchStats()
+  }, [fetchDevices, fetchStats])
+
+  const handleHealthCheck = async (deviceId: string) => {
+    setCheckingHealthId(deviceId)
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/health`)
+      if (!res.ok) throw new Error('헬스체크 실패')
+      const data = await res.json()
+      setHealthResults((prev) => ({
+        ...prev,
+        [deviceId]: {
+          status: data.status,
+          latency_ms: data.latency_ms ?? null,
+          checked_at: new Date().toISOString(),
+        },
+      }))
+      toast.success('헬스체크 완료', {
+        description: `${deviceId}: ${data.status}${data.latency_ms != null ? ` (${data.latency_ms}ms)` : ''}`,
+      })
+    } catch {
+      toast.error('헬스체크 실패', { description: deviceId })
+    } finally {
+      setCheckingHealthId(null)
+    }
+  }
 
   const handleRegister = async () => {
     if (!formDeviceId || !formIp || !formLocation) {
@@ -133,7 +189,7 @@ function DevicesPage() {
     return <Monitor className='size-5' />
   }
 
-  const statusSummary = {
+  const statusSummary = deviceStats ?? {
     total: devices.length,
     online: devices.filter((d) => d.status === 'online').length,
     offline: devices.filter((d) => d.status === 'offline').length,
@@ -324,6 +380,11 @@ function DevicesPage() {
                        <Badge variant='secondary' className='text-xs'>
                          {device.device_type}
                        </Badge>
+                       {device.security_grade && (
+                         <Badge variant='outline' className='text-xs'>
+                           등급 {device.security_grade}
+                         </Badge>
+                       )}
                      </div>
                     <div className='flex items-center gap-1.5 text-sm text-muted-foreground'>
                       <Wifi className='size-3.5' />
@@ -333,6 +394,51 @@ function DevicesPage() {
                       <MapPin className='size-3.5' />
                       {device.location}
                     </div>
+                    {device.last_health_check && (
+                      <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                        <Clock className='size-3' />
+                        헬스체크: {new Date(device.last_health_check).toLocaleString('ko-KR')}
+                      </div>
+                    )}
+                    <div className='flex items-center gap-2 pt-1'>
+                      <Button
+                        size='sm'
+                        variant='outline'
+                        className='h-7 gap-1 px-2 text-xs'
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleHealthCheck(device.device_id)
+                        }}
+                        disabled={checkingHealthId === device.device_id}
+                      >
+                        {checkingHealthId === device.device_id ? (
+                          <Loader2 className='size-3 animate-spin' />
+                        ) : (
+                          <Activity className='size-3' />
+                        )}
+                        헬스체크
+                      </Button>
+                    </div>
+                    {healthResults[device.device_id] && (
+                      <div className={cn(
+                        'rounded-md p-2 text-xs',
+                        healthResults[device.device_id].status === 'healthy'
+                          ? 'bg-green-500/10 text-green-700 dark:text-green-400'
+                          : 'bg-red-500/10 text-red-700 dark:text-red-400'
+                      )}>
+                        <div className='flex items-center justify-between'>
+                          <span className='font-medium'>
+                            {healthResults[device.device_id].status === 'healthy' ? '정상' : '이상'}
+                          </span>
+                          {healthResults[device.device_id].latency_ms != null && (
+                            <span>{healthResults[device.device_id].latency_ms}ms</span>
+                          )}
+                        </div>
+                        <p className='mt-0.5 text-muted-foreground'>
+                          {new Date(healthResults[device.device_id].checked_at).toLocaleString('ko-KR')}
+                        </p>
+                      </div>
+                    )}
                     {selectedDevice?.device_id === device.device_id && device.last_seen && (
                       <div className='mt-2 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground'>
                         마지막 연결: {new Date(device.last_seen).toLocaleString('ko-KR')}
