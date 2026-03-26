@@ -7,6 +7,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
     use_rag: bool = True
+    use_tools: bool = False
 
 
 class ChatStreamEvent(BaseModel):

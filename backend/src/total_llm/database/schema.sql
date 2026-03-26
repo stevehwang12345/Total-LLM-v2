@@ -85,10 +85,33 @@ CREATE TABLE IF NOT EXISTS device_health_logs (
     status TEXT NOT NULL
 );
 
-INSERT INTO devices (device_id, device_type, manufacturer, ip_address, port, protocol, location, status)
-VALUES
-    ('CCTV-001', 'CCTV', 'Hanwha Vision', '192.168.10.11', 554, 'RTSP', 'Gate A', 'online'),
-    ('CCTV-002', 'CCTV', 'Axis', '192.168.10.12', 554, 'RTSP', 'Warehouse', 'online'),
-    ('ACU-001', 'ACU', 'Honeywell', '192.168.20.21', 502, 'Modbus', 'Control Room', 'online'),
-    ('ACU-002', 'ACU', 'Siemens', '192.168.20.22', 502, 'Modbus', 'Server Room', 'maintenance')
-ON CONFLICT (device_id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS scan_sessions (
+    scan_id TEXT PRIMARY KEY,
+    cidr TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    total_found INTEGER DEFAULT 0,
+    error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS discovered_devices (
+    id BIGSERIAL PRIMARY KEY,
+    scan_id TEXT NOT NULL REFERENCES scan_sessions(scan_id) ON DELETE CASCADE,
+    ip_address TEXT NOT NULL,
+    mac_address TEXT,
+    hostname TEXT,
+    vendor TEXT,
+    open_ports JSONB,
+    http_banner JSONB,
+    onvif_info JSONB,
+    mdns_info JSONB,
+    llm_profile JSONB,
+    discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status TEXT NOT NULL DEFAULT 'pending',
+    device_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_discovered_scan_id ON discovered_devices(scan_id);
+CREATE INDEX IF NOT EXISTS idx_discovered_ip ON discovered_devices(ip_address);
+

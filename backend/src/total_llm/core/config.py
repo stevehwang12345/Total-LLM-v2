@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings(host="localhost", port=5432, database="total_llm", username="total_llm", password="total_llm_dev"))
     redis: RedisSettings = Field(default_factory=RedisSettings)
+    scanner_base_url: str = "http://localhost:9003"
     api: APISettings = Field(default_factory=APISettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
 
@@ -93,6 +94,7 @@ class Settings(BaseSettings):
         src.setdefault("qdrant", {"host": os.getenv("QDRANT_HOST", "localhost"), "port": int(os.getenv("QDRANT_PORT", "6333")), "collection_name": os.getenv("QDRANT_COLLECTION_NAME", "documents"), "vector_size": int(os.getenv("QDRANT_VECTOR_SIZE", "1024"))})
         src.setdefault("database", {"host": os.getenv("POSTGRES_HOST", os.getenv("DB_HOST", "localhost")), "port": int(os.getenv("POSTGRES_PORT", os.getenv("DB_PORT", "5432"))), "database": os.getenv("POSTGRES_DB", os.getenv("DB_NAME", "total_llm")), "username": os.getenv("POSTGRES_USER", os.getenv("DB_USER", "total_llm")), "password": os.getenv("POSTGRES_PASSWORD", os.getenv("DB_PASSWORD", "total_llm_dev"))})
         src.setdefault("redis", {"host": os.getenv("REDIS_HOST", "localhost"), "port": int(os.getenv("REDIS_PORT", "6379")), "password": os.getenv("REDIS_PASSWORD") or None})
+        src.setdefault("scanner_base_url", os.getenv("SCANNER_BASE_URL", "http://localhost:9003"))
         src.setdefault("api", {"host": os.getenv("API_HOST", "0.0.0.0"), "port": int(os.getenv("API_PORT", "9002")), "cors_origins": os.getenv("CORS_ORIGINS", "[\"http://localhost:9004\"]")})
         src.setdefault("auth", {"jwt_secret": os.getenv("JWT_SECRET", "change-me-in-production"), "algorithm": os.getenv("JWT_ALGORITHM", "HS256"), "expire_minutes": int(os.getenv("JWT_EXPIRE_MINUTES", "60"))})
         return src

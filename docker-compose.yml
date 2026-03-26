@@ -18,6 +18,9 @@ services:
       - "--quantization"
       - "fp8"
       - "--enforce-eager"
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_xml"
       - "--limit-mm-per-prompt"
       - '{"image": 4}'
     environment:
@@ -122,6 +125,7 @@ services:
       POSTGRES_DB: total_llm
       POSTGRES_USER: total_llm
       POSTGRES_PASSWORD: total_llm_dev
+      SCANNER_BASE_URL: http://scanner:9003
       CORS_ORIGINS: '["http://localhost:9004", "http://frontend"]'
       JWT_SECRET: change-me-in-production
       HF_HOME: /root/.cache/huggingface
@@ -156,6 +160,27 @@ services:
     depends_on:
       backend:
         condition: service_started
+    networks:
+      - total-llm-v2-network
+
+  scanner:
+    build:
+      context: ./scanner
+      dockerfile: Dockerfile
+    container_name: total-llm-v2-scanner
+    ports:
+      - "9003:9003"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      BACKEND_URL: http://localhost:9002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9003/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - total-llm-v2-network
 

@@ -114,6 +114,41 @@ async def init_db(pool: asyncpg.Pool) -> None:
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_reports_type ON reports(report_type, created_at DESC)"
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scan_sessions (
+                scan_id TEXT PRIMARY KEY,
+                cidr TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMPTZ,
+                total_found INTEGER DEFAULT 0,
+                error_message TEXT
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS discovered_devices (
+                id BIGSERIAL PRIMARY KEY,
+                scan_id TEXT NOT NULL REFERENCES scan_sessions(scan_id) ON DELETE CASCADE,
+                ip_address TEXT NOT NULL,
+                mac_address TEXT,
+                hostname TEXT,
+                vendor TEXT,
+                open_ports JSONB,
+                http_banner JSONB,
+                onvif_info JSONB,
+                mdns_info JSONB,
+                llm_profile JSONB,
+                discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL DEFAULT 'pending',
+                device_id TEXT
+            )
+            """
+        )
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_discovered_scan_id ON discovered_devices(scan_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_discovered_ip ON discovered_devices(ip_address)")
 
 
 def get_pool() -> asyncpg.Pool | None:

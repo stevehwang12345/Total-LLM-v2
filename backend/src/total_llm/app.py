@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from total_llm.api.alarms import router as alarms_router
 from total_llm.api.analysis import router as analysis_router
 from total_llm.api.chat import router as chat_router
+from total_llm.api.discovery import router as discovery_router
 from total_llm.api.devices import router as devices_router
 from total_llm.api.documents import router as documents_router
 from total_llm.api.reports import router as reports_router
@@ -92,7 +93,7 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
-for router in (chat_router, analysis_router, devices_router, alarms_router, documents_router, reports_router, system_router):
+for router in (chat_router, analysis_router, devices_router, discovery_router, alarms_router, documents_router, reports_router, system_router):
     app.include_router(router)
 
 
