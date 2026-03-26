@@ -6,6 +6,8 @@ import {
   Upload,
   Loader2,
   Image as ImageIcon,
+  Video,
+  Film,
   AlertTriangle,
   X,
   ChevronDown,
@@ -33,6 +35,12 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import {
   Table,
@@ -59,6 +67,13 @@ interface QAResults {
   q4_context: string
 }
 
+const EMPTY_QA_RESULTS: QAResults = {
+  q1_scene: '',
+  q2_behavior: '',
+  q3_entities: '',
+  q4_context: '',
+}
+
 interface AnalysisResult {
   analysis_id: string
   filename: string
@@ -72,6 +87,8 @@ interface AnalysisResult {
   report: string
   recommended_actions: string[]
   sop_reference: string | null
+  content_type?: string
+  media_type?: string
 }
 
 interface AnalysisHistoryItem {
@@ -83,6 +100,8 @@ interface AnalysisHistoryItem {
   risk_level: number
   confidence: number
   created_at: string
+  content_type?: string
+  media_type?: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,6 +164,18 @@ const RISK_CONFIG: Record<number, RiskConfig> = {
 
 function getRiskConfig(level: number): RiskConfig {
   return RISK_CONFIG[level] ?? RISK_CONFIG[1]
+}
+
+/* ------------------------------------------------------------------ */
+/*  Media Type Helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+function isVideoFile(file: File): boolean {
+  return file.type.startsWith('video/')
+}
+
+function isVideoMedia(item: { content_type?: string; media_type?: string }): boolean {
+  return item.media_type === 'video' || item.content_type?.startsWith('video/') === true
 }
 
 /* ------------------------------------------------------------------ */
@@ -347,7 +378,7 @@ function RecommendedActions({
 /*  Loading Steps                                                      */
 /* ------------------------------------------------------------------ */
 
-const ANALYSIS_STEPS = [
+const IMAGE_ANALYSIS_STEPS = [
   '장면 분석',
   '행동 분석',
   '객체·인물 분석',
@@ -355,20 +386,30 @@ const ANALYSIS_STEPS = [
   '보고서 생성',
 ] as const
 
-function AnalysisProgress({ elapsed }: { elapsed: number }) {
-  // Simulate step progression based on elapsed time
+const VIDEO_ANALYSIS_STEPS = [
+  '프레임 추출',
+  '장면 분석',
+  '행동 분석',
+  '객체·인물 분석',
+  '환경·맥락 분석',
+  '보고서 생성',
+] as const
+
+function AnalysisProgress({ elapsed, mediaType }: { elapsed: number; mediaType: 'image' | 'video' }) {
+  const steps = mediaType === 'video' ? VIDEO_ANALYSIS_STEPS : IMAGE_ANALYSIS_STEPS
+  const estimatedTime = mediaType === 'video' ? '약 30~60초 소요' : '약 15~30초 소요'
   const completedSteps = Math.min(
     Math.floor(elapsed / 4),
-    ANALYSIS_STEPS.length
+    steps.length
   )
 
   return (
     <div className='mt-4 space-y-2 rounded-md border bg-muted/30 p-4'>
       <div className='mb-3 flex items-center gap-2'>
         <Loader2 className='size-4 animate-spin text-primary' />
-        <p className='text-sm font-medium'>분석 중... (약 15~30초 소요)</p>
+        <p className='text-sm font-medium'>분석 중... ({estimatedTime})</p>
       </div>
-      {ANALYSIS_STEPS.map((step, i) => {
+      {steps.map((step, i) => {
         const done = i < completedSteps
         const active = i === completedSteps
         return (
@@ -402,7 +443,13 @@ function AnalysisProgress({ elapsed }: { elapsed: number }) {
 /*  History Table                                                      */
 /* ------------------------------------------------------------------ */
 
-function HistoryTable({ history }: { history: AnalysisHistoryItem[] }) {
+function HistoryTable({
+  history,
+  onRowClick,
+}: {
+  history: AnalysisHistoryItem[]
+  onRowClick?: (id: string) => void
+}) {
   return (
     <Card>
       <CardHeader>
@@ -421,6 +468,7 @@ function HistoryTable({ history }: { history: AnalysisHistoryItem[] }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className='w-14'>미디어</TableHead>
                   <TableHead>시각</TableHead>
                   <TableHead>위치</TableHead>
                   <TableHead>이벤트 유형</TableHead>
@@ -429,12 +477,32 @@ function HistoryTable({ history }: { history: AnalysisHistoryItem[] }) {
                   <TableHead>파일명</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {history.map((item) => (
-                  <TableRow key={item.analysis_id}>
-                    <TableCell className='text-xs whitespace-nowrap'>
-                      {new Date(item.created_at).toLocaleString('ko-KR')}
-                    </TableCell>
+               <TableBody>
+                 {history.map((item) => (
+                   <TableRow
+                     key={item.analysis_id}
+                     onClick={() => onRowClick?.(item.analysis_id)}
+                     className={cn(onRowClick && 'cursor-pointer hover:bg-muted/50')}
+                   >
+                     <TableCell className='w-14 py-1'>
+                        {isVideoMedia(item) ? (
+                          <div className='flex size-10 items-center justify-center rounded border bg-muted'>
+                            <Film className='size-5 text-muted-foreground' />
+                          </div>
+                        ) : (
+                          <img
+                            src={`/api/analysis/${item.analysis_id}/image`}
+                            alt={item.filename}
+                            className='size-10 rounded border object-cover'
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none'
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                     <TableCell className='text-xs whitespace-nowrap'>
+                       {new Date(item.created_at).toLocaleString('ko-KR')}
+                     </TableCell>
                     <TableCell className='text-sm'>
                       {item.location || '—'}
                     </TableCell>
@@ -473,6 +541,7 @@ function AnalysisPage() {
   const [elapsed, setElapsed] = useState(0)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([])
+  const [detail, setDetail] = useState<AnalysisResult | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -497,6 +566,37 @@ function AnalysisPage() {
   }, [isAnalyzing])
 
   /* Fetch history */
+  const openDetail = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/analysis/${id}`)
+      if (!res.ok) {
+        toast.error('상세 이력 조회 실패', {
+          description: `응답 코드: ${res.status}`,
+        })
+        return
+      }
+      const data = await res.json()
+      setDetail({
+        ...data,
+        incident_type: data.incident_type || data.result?.incident_type || '정상활동',
+        incident_type_en: data.incident_type_en || data.result?.incident_type_en || 'Normal',
+        severity: data.severity || data.result?.severity || '정보',
+        risk_level: data.risk_level || data.result?.risk_level || 1,
+        confidence: data.confidence || data.result?.confidence || 0.5,
+        qa_results: {
+          ...EMPTY_QA_RESULTS,
+          ...(data.qa_results || data.result?.qa_results || {}),
+        },
+        report: data.report || data.result?.report || '',
+        recommended_actions: data.recommended_actions || data.result?.recommended_actions || [],
+        sop_reference: data.sop_reference || data.result?.sop_reference || null,
+      } as AnalysisResult)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '상세 이력 조회 중 오류 발생'
+      toast.error('상세 이력 조회 실패', { description: message })
+    }
+  }, [])
+
   const fetchHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/analysis')
@@ -525,7 +625,10 @@ function AnalysisPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.bmp', '.webp'] },
+    accept: {
+      'image/*': ['.jpg', '.jpeg', '.png', '.bmp', '.webp'],
+      'video/mp4': ['.mp4'],
+    },
     maxFiles: 1,
     multiple: false,
   })
@@ -597,14 +700,50 @@ function AnalysisPage() {
           <div className='flex flex-col gap-4'>
             <Card>
               <CardHeader>
-                <CardTitle>이미지 업로드</CardTitle>
+                <CardTitle>미디어 업로드</CardTitle>
                 <CardDescription>
-                  분석할 CCTV 캡처 이미지를 업로드하세요
+                  분석할 CCTV 이미지 또는 영상을 업로드하세요
                 </CardDescription>
               </CardHeader>
               <CardContent className='space-y-4'>
                 {/* Drop zone */}
-                {!preview ? (
+                {file && isVideoFile(file) ? (
+                  <div className='relative'>
+                    <video
+                      src={preview ?? undefined}
+                      controls
+                      className='w-full rounded-lg border object-contain'
+                      style={{ maxHeight: '280px' }}
+                    >
+                      <track kind='captions' />
+                    </video>
+                    <Button
+                      variant='destructive'
+                      size='icon'
+                      className='absolute top-2 right-2 size-7'
+                      onClick={clearFile}
+                    >
+                      <X className='size-4' />
+                    </Button>
+                  </div>
+                ) : preview ? (
+                  <div className='relative'>
+                    <img
+                      src={preview}
+                      alt='업로드된 이미지 미리보기'
+                      className='w-full rounded-lg border object-contain'
+                      style={{ maxHeight: '280px' }}
+                    />
+                    <Button
+                      variant='destructive'
+                      size='icon'
+                      className='absolute top-2 right-2 size-7'
+                      onClick={clearFile}
+                    >
+                      <X className='size-4' />
+                    </Button>
+                  </div>
+                ) : (
                   <div
                     {...getRootProps()}
                     className={cn(
@@ -625,26 +764,9 @@ function AnalysisPage() {
                           : '클릭하거나 드래그하여 업로드'}
                       </p>
                       <p className='mt-1 text-xs text-muted-foreground'>
-                        JPG, PNG, WebP, BMP 형식 지원
+                        JPG, PNG, WebP, BMP, MP4 형식 지원
                       </p>
                     </div>
-                  </div>
-                ) : (
-                  <div className='relative'>
-                    <img
-                      src={preview}
-                      alt='업로드된 이미지 미리보기'
-                      className='w-full rounded-lg border object-contain'
-                      style={{ maxHeight: '280px' }}
-                    />
-                    <Button
-                      variant='destructive'
-                      size='icon'
-                      className='absolute top-2 right-2 size-7'
-                      onClick={clearFile}
-                    >
-                      <X className='size-4' />
-                    </Button>
                   </div>
                 )}
 
@@ -670,7 +792,11 @@ function AnalysisPage() {
                 {file && (
                   <div className='space-y-3'>
                     <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                      <ImageIcon className='size-4 shrink-0' />
+                      {file && isVideoFile(file) ? (
+                        <Video className='size-4 shrink-0' />
+                      ) : (
+                        <ImageIcon className='size-4 shrink-0' />
+                      )}
                       <span className='truncate'>{file.name}</span>
                       <span className='shrink-0 text-xs'>
                         ({(file.size / 1024).toFixed(1)} KB)
@@ -694,7 +820,7 @@ function AnalysisPage() {
                 )}
 
                 {/* Loading progress steps */}
-                {isAnalyzing && <AnalysisProgress elapsed={elapsed} />}
+                {isAnalyzing && <AnalysisProgress elapsed={elapsed} mediaType={file && isVideoFile(file) ? 'video' : 'image'} />}
               </CardContent>
             </Card>
           </div>
@@ -716,7 +842,30 @@ function AnalysisPage() {
 
             {result && (
               <>
-                {/* 3a. Threat Level Banner */}
+                {/* 3a. Preview Image */}
+                {preview && (
+                  <Card>
+                    <CardContent className='flex items-center justify-center py-4'>
+                      {result.media_type === 'video' ? (
+                        <video
+                          src={preview}
+                          controls
+                          className='max-h-48 rounded-lg border object-contain'
+                        >
+                          <track kind='captions' />
+                        </video>
+                      ) : (
+                        <img
+                          src={preview}
+                          alt='분석된 이미지'
+                          className='max-h-48 rounded-lg border object-contain'
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* 3b. Threat Level Banner */}
                 <ThreatBanner result={result} />
 
                 {/* 3b. Summary Card */}
@@ -740,8 +889,51 @@ function AnalysisPage() {
 
         {/* ── History Table (full width below) ── */}
         <div className='mt-6'>
-          <HistoryTable history={history} />
+          <HistoryTable history={history} onRowClick={openDetail} />
         </div>
+
+        <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
+          <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-4xl'>
+            <DialogHeader>
+              <DialogTitle>분석 이력 상세 보고서</DialogTitle>
+            </DialogHeader>
+
+            {detail && (
+              <div className='space-y-4'>
+                <Card>
+                  <CardContent className='flex items-center justify-center py-4'>
+                    {isVideoMedia(detail) ? (
+                      <video
+                        src={`/api/analysis/${detail.analysis_id}/media`}
+                        controls
+                        className='max-h-64 rounded-lg border object-contain'
+                      >
+                        <track kind='captions' />
+                      </video>
+                    ) : (
+                      <img
+                        src={`/api/analysis/${detail.analysis_id}/image`}
+                        alt={detail.filename}
+                        className='max-h-64 rounded-lg border object-contain'
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).parentElement!.style.display = 'none'
+                        }}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+                <ThreatBanner result={detail} />
+                <SummaryCard result={detail} />
+                <QAAccordion qaResults={detail.qa_results} />
+                <SecurityReport report={detail.report} />
+                <RecommendedActions
+                  actions={detail.recommended_actions}
+                  sopReference={detail.sop_reference}
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </Main>
     </>
   )
