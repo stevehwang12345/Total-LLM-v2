@@ -1,1 +1,12 @@
-node_modules/\ndist/\n__pycache__/\n*.pyc\n.env\ndata/\n*.egg-info/\n.venv/\n
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+.env
+data/
+*.egg-info/
+.venv/
+.sisyphus/
+data/reports/
+data/uploads/
