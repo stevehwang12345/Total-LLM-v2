@@ -6,7 +6,7 @@ from pathlib import Path
 import asyncpg
 from fastapi.openapi.models import Example
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from total_llm.core.dependencies import get_db_pool, get_settings
 from total_llm.core.exceptions import ExternalServiceError, NotFoundError, ValidationError
@@ -101,6 +101,36 @@ async def get_report_detail(
         if result.get(key) is not None:
             result[key] = str(result[key])
     return result
+
+
+@router.get("/{report_id}/preview")
+async def preview_report(
+    report_id: str,
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    settings=Depends(get_settings),
+):
+    _ = settings
+    query = "SELECT file_path, title FROM reports WHERE report_id = $1"
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(query, report_id)
+    except Exception as exc:
+        logger.exception("Failed loading report for preview: %s", report_id)
+        raise ExternalServiceError("Failed loading report") from exc
+
+    if row is None:
+        raise NotFoundError("Report not found")
+
+    file_path = Path(row["file_path"]) if row["file_path"] else None
+    if file_path is None or not file_path.exists():
+        raise NotFoundError("Report file not found")
+
+    content = file_path.read_bytes()
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )
 
 
 @router.get("/{report_id}/download")

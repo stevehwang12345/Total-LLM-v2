@@ -446,7 +446,7 @@ function ReportsPage() {
               <TabsContent value='pdf' className='mt-3'>
                 {previewReport && (
                   <iframe
-                    src={previewReport.download_url || `/api/reports/${previewReport.report_id}/download`}
+                    src={`/api/reports/${previewReport.report_id}/preview`}
                     className='h-[65vh] w-full rounded-lg border'
                     title='보고서 PDF 미리보기'
                   />
