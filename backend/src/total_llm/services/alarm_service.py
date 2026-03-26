@@ -2,15 +2,38 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from typing import Any
 from typing import AsyncGenerator
 from uuid import uuid4
 
 import asyncpg
 from redis.asyncio import Redis
 
+from total_llm.core.exceptions import ValidationError
 from total_llm.models.schemas import AlarmModel
 
 logger = logging.getLogger(__name__)
+
+
+ALARM_STATUSES = {
+    "triggered",
+    "acknowledged",
+    "investigating",
+    "resolved",
+    "closed",
+    "false_alarm",
+}
+
+ALARM_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "triggered": {"acknowledged", "false_alarm"},
+    "acknowledged": {"investigating", "resolved", "false_alarm"},
+    "investigating": {"resolved", "false_alarm"},
+    "resolved": {"closed"},
+    "closed": set(),
+    "false_alarm": {"closed"},
+}
+
+ALARM_PRIORITIES = {"P1", "P2", "P3", "P4"}
 
 
 class AlarmService:
@@ -23,22 +46,41 @@ class AlarmService:
     async def list_alarms(
         self,
         db_pool: asyncpg.Pool,
+        severity: str | None = None,
         limit: int = 50,
+        status: str | None = None,
+        priority: str | None = None,
+        *,
         severity_filter: str | None = None,
+        status_filter: str | None = None,
+        priority_filter: str | None = None,
     ) -> list[AlarmModel]:
         limit = max(1, min(limit, 500))
-        if severity_filter:
-            query = (
-                "SELECT alarm_id, device_id, severity, description, timestamp, acknowledged "
-                "FROM alarms WHERE severity = $1 ORDER BY timestamp DESC LIMIT $2"
-            )
-            params = (severity_filter, limit)
-        else:
-            query = (
-                "SELECT alarm_id, device_id, severity, description, timestamp, acknowledged "
-                "FROM alarms ORDER BY timestamp DESC LIMIT $1"
-            )
-            params = (limit,)
+        severity = severity if severity is not None else severity_filter
+        status = status if status is not None else status_filter
+        priority = priority if priority is not None else priority_filter
+
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if severity:
+            params.append(severity)
+            conditions.append(f"severity = ${len(params)}")
+        if status:
+            params.append(status)
+            conditions.append(f"status = ${len(params)}")
+        if priority:
+            params.append(priority)
+            conditions.append(f"priority = ${len(params)}")
+
+        query = (
+            "SELECT alarm_id, device_id, severity, description, timestamp, acknowledged "
+            "FROM alarms"
+        )
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        params.append(limit)
+        query += f" ORDER BY timestamp DESC LIMIT ${len(params)}"
 
         try:
             async with db_pool.acquire() as conn:
@@ -63,25 +105,41 @@ class AlarmService:
             logger.exception("Failed getting alarm: %s", alarm_id)
             raise
 
-    async def create_alarm(self, db_pool: asyncpg.Pool, alarm: AlarmModel) -> AlarmModel:
-        alarm_id = alarm.alarm_id or str(uuid4())
+    async def create_alarm(
+        self,
+        db_pool: asyncpg.Pool,
+        device_id: str,
+        severity: str,
+        description: str,
+        priority: str = "P3",
+        analysis_id: str | None = None,
+        status: str = "triggered",
+    ) -> AlarmModel:
+        if status not in ALARM_STATUSES:
+            raise ValidationError(f"유효하지 않은 상태: {status}")
+        if priority not in ALARM_PRIORITIES:
+            raise ValidationError(f"유효하지 않은 우선순위: {priority}")
+
+        alarm_id = str(uuid4())
         query = (
-            "INSERT INTO alarms (alarm_id, device_id, severity, description, timestamp, acknowledged) "
-            "VALUES ($1, $2, $3, $4, $5, $6) "
+            "INSERT INTO alarms (alarm_id, device_id, severity, description, status, priority, analysis_id) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7) "
             "RETURNING alarm_id, device_id, severity, description, timestamp, acknowledged"
         )
 
         try:
             async with db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    query,
-                    alarm_id,
-                    alarm.device_id,
-                    alarm.severity,
-                    alarm.description,
-                    alarm.timestamp,
-                    alarm.acknowledged,
-                )
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        query,
+                        alarm_id,
+                        device_id,
+                        severity,
+                        description,
+                        status,
+                        priority,
+                        analysis_id,
+                    )
             if row is None:
                 raise RuntimeError("Failed to create alarm")
 
@@ -93,22 +151,82 @@ class AlarmService:
             logger.exception("Failed creating alarm: %s", alarm_id)
             raise
 
-    async def acknowledge_alarm(self, db_pool: asyncpg.Pool, alarm_id: str) -> AlarmModel:
-        query = (
-            "UPDATE alarms SET acknowledged = TRUE "
+    async def update_alarm_status(
+        self,
+        db_pool: asyncpg.Pool,
+        alarm_id: str,
+        new_status: str,
+        operator_id: str | None = None,
+        notes: str | None = None,
+    ) -> AlarmModel:
+        if new_status not in ALARM_STATUSES:
+            raise ValidationError(f"유효하지 않은 상태: {new_status}")
+
+        select_query = "SELECT alarm_id, status FROM alarms WHERE alarm_id = $1"
+        update_query = (
+            "UPDATE alarms SET "
+            "status = $2, "
+            "acknowledged = CASE WHEN $2 = 'triggered' THEN acknowledged ELSE TRUE END, "
+            "resolved_at = CASE "
+            "    WHEN $2 IN ('resolved', 'closed') THEN COALESCE(resolved_at, NOW()) "
+            "    ELSE resolved_at "
+            "END, "
+            "resolved_by = CASE "
+            "    WHEN $2 IN ('resolved', 'closed') AND $3::TEXT IS NOT NULL THEN $3::TEXT "
+            "    ELSE resolved_by "
+            "END, "
+            "investigation_notes = CASE "
+            "    WHEN $4::TEXT IS NOT NULL THEN $4::TEXT "
+            "    ELSE investigation_notes "
+            "END "
             "WHERE alarm_id = $1 "
             "RETURNING alarm_id, device_id, severity, description, timestamp, acknowledged"
         )
+
         try:
             async with db_pool.acquire() as conn:
-                row = await conn.fetchrow(query, alarm_id)
+                async with conn.transaction():
+                    current_row = await conn.fetchrow(select_query, alarm_id)
+                    if current_row is None:
+                        raise ValueError(f"Alarm not found: {alarm_id}")
+
+                    current_status = current_row["status"]
+                    allowed_next = ALARM_VALID_TRANSITIONS.get(current_status, set())
+                    if new_status not in allowed_next:
+                        raise ValidationError(
+                            f"유효하지 않은 상태 전이: {current_status} → {new_status}"
+                        )
+
+                    row = await conn.fetchrow(
+                        update_query,
+                        alarm_id,
+                        new_status,
+                        operator_id,
+                        notes,
+                    )
+
             if row is None:
-                raise ValueError(f"Alarm not found: {alarm_id}")
+                raise RuntimeError(f"Failed to update alarm status: {alarm_id}")
 
             updated = AlarmModel.model_validate(dict(row))
             await self._invalidate_stats_cache()
-            await self._broadcast_alarm("alarm_acknowledged", updated)
+
+            event_name = (
+                "alarm_acknowledged" if new_status == "acknowledged" else "alarm_status_updated"
+            )
+            await self._broadcast_alarm(event_name, updated)
             return updated
+        except Exception:
+            logger.exception("Failed updating alarm status: %s -> %s", alarm_id, new_status)
+            raise
+
+    async def acknowledge_alarm(self, db_pool: asyncpg.Pool, alarm_id: str) -> AlarmModel:
+        try:
+            return await self.update_alarm_status(
+                db_pool=db_pool,
+                alarm_id=alarm_id,
+                new_status="acknowledged",
+            )
         except Exception:
             logger.exception("Failed acknowledging alarm: %s", alarm_id)
             raise
@@ -118,9 +236,11 @@ class AlarmService:
         if cached is not None:
             return cached
 
+        total_query = "SELECT COUNT(*)::int AS count FROM alarms"
         severity_query = (
             "SELECT severity, COUNT(*)::int AS count FROM alarms GROUP BY severity"
         )
+        unack_query = "SELECT COUNT(*)::int AS count FROM alarms WHERE acknowledged = FALSE"
         trend_query = (
             "SELECT DATE(timestamp) AS day, COUNT(*)::int AS count "
             "FROM alarms "
@@ -131,14 +251,18 @@ class AlarmService:
 
         try:
             async with db_pool.acquire() as conn:
+                total_row = await conn.fetchrow(total_query)
                 severity_rows = await conn.fetch(severity_query)
+                unack_row = await conn.fetchrow(unack_query)
                 trend_rows = await conn.fetch(trend_query)
         except Exception:
             logger.exception("Failed gathering alarm stats")
             raise
 
         stats = {
-            "severity_counts": {row["severity"]: row["count"] for row in severity_rows},
+            "total": total_row["count"],
+            "by_severity": {row["severity"]: row["count"] for row in severity_rows},
+            "unacknowledged": unack_row["count"],
             "daily_trends": [
                 {"date": row["day"].isoformat(), "count": row["count"]}
                 for row in trend_rows

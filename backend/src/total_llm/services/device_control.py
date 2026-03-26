@@ -156,6 +156,65 @@ class DeviceService:
             "status": "online" if healthy else "offline",
         }
 
+    async def log_health_check(
+        self,
+        db_pool: asyncpg.Pool,
+        device_id: str,
+        result: dict[str, Any],
+    ) -> None:
+        status = result.get("status", "offline")
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO device_health_logs "
+                    "(device_id, reachable, port_open, latency_ms, status) "
+                    "VALUES ($1, $2, $3, $4, $5)",
+                    device_id,
+                    result.get("reachable", False),
+                    result.get("port_open", False),
+                    result.get("latency_ms"),
+                    status,
+                )
+                await conn.execute(
+                    "UPDATE devices SET last_health_check = NOW(), status = $1 WHERE device_id = $2",
+                    status,
+                    device_id,
+                )
+
+    async def get_health_history(
+        self,
+        db_pool: asyncpg.Pool,
+        device_id: str,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, device_id, checked_at, reachable, port_open, latency_ms, status "
+                "FROM device_health_logs "
+                "WHERE device_id = $1 "
+                "ORDER BY checked_at DESC LIMIT $2",
+                device_id,
+                limit,
+            )
+        return [dict(row) for row in rows]
+
+    async def is_in_cooldown(
+        self,
+        db_pool: asyncpg.Pool,
+        device_id: str,
+        cooldown_seconds: int = 300,
+    ) -> bool:
+        async with db_pool.acquire() as conn:
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM alarms "
+                "WHERE device_id = $1 "
+                "AND status NOT IN ('closed', 'false_alarm') "
+                "AND timestamp > NOW() - INTERVAL '1 second' * $2",
+                device_id,
+                cooldown_seconds,
+            )
+        return (count or 0) > 0
+
     async def _ping_host(self, ip_address: str) -> dict[str, Any]:
         started = time.perf_counter()
         try:
