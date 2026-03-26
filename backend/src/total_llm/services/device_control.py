@@ -144,12 +144,19 @@ class DeviceService:
         ping_result = await self._ping_host(device.ip_address)
         port_result = await self._check_port(device.ip_address, device.port)
 
-        healthy = ping_result["reachable"] and port_result["port_open"]
+        ping_available = ping_result.get("ping_available", True)
+        if ping_available:
+            healthy = bool(ping_result["reachable"]) and port_result["port_open"]
+            reachable = bool(ping_result["reachable"])
+        else:
+            healthy = bool(port_result["port_open"])
+            reachable = bool(port_result["port_open"])
+
         return {
             "device_id": device.device_id,
             "ip_address": device.ip_address,
             "port": device.port,
-            "reachable": ping_result["reachable"],
+            "reachable": reachable,
             "port_open": port_result["port_open"],
             "latency_ms": ping_result["latency_ms"],
             "check_duration_ms": ping_result["duration_ms"] + port_result["duration_ms"],
@@ -234,6 +241,16 @@ class DeviceService:
                 "reachable": return_code == 0,
                 "latency_ms": duration_ms if return_code == 0 else None,
                 "duration_ms": duration_ms,
+                "ping_available": True,
+            }
+        except FileNotFoundError:
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            logger.warning("Ping binary unavailable; falling back to TCP probe for host: %s", ip_address)
+            return {
+                "reachable": False,
+                "latency_ms": None,
+                "duration_ms": duration_ms,
+                "ping_available": False,
             }
         except Exception:
             logger.exception("Ping failed for host: %s", ip_address)
@@ -242,6 +259,7 @@ class DeviceService:
                 "reachable": False,
                 "latency_ms": None,
                 "duration_ms": duration_ms,
+                "ping_available": True,
             }
 
     async def _check_port(self, ip_address: str, port: int) -> dict[str, Any]:
