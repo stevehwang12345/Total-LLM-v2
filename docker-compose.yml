@@ -12,14 +12,14 @@ services:
       - "--model"
       - "Qwen/Qwen3.5-9B"
       - "--max-model-len"
-      - "4096"
+      - "8192"
       - "--gpu-memory-utilization"
       - "0.90"
       - "--quantization"
       - "fp8"
       - "--enforce-eager"
       - "--limit-mm-per-prompt"
-      - '{"image": 2}'
+      - '{"image": 4}'
     environment:
       NVIDIA_VISIBLE_DEVICES: "1"
       HUGGING_FACE_HUB_TOKEN: "${HUGGING_FACE_HUB_TOKEN:-}"
