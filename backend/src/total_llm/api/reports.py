@@ -74,6 +74,35 @@ async def list_reports(
         raise ExternalServiceError("Failed listing reports") from exc
 
 
+@router.get("/{report_id}")
+async def get_report_detail(
+    report_id: str,
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    settings=Depends(get_settings),
+):
+    _ = settings
+    query = (
+        "SELECT report_id, title, report_type, file_path, created_at, "
+        "date_range_start, date_range_end, generated_by, data_snapshot "
+        "FROM reports WHERE report_id = $1"
+    )
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(query, report_id)
+    except Exception as exc:
+        logger.exception("Failed loading report detail: %s", report_id)
+        raise ExternalServiceError("Failed loading report detail") from exc
+
+    if row is None:
+        raise NotFoundError("Report not found")
+
+    result = dict(row)
+    for key in ("created_at", "date_range_start", "date_range_end"):
+        if result.get(key) is not None:
+            result[key] = str(result[key])
+    return result
+
+
 @router.get("/{report_id}/download")
 async def download_report(
     report_id: str,

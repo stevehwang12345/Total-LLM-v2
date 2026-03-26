@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime
@@ -120,6 +121,7 @@ class ReportService:
         }.get(report_type, report_type.upper())
         title = f"{type_label} ({params.get('date', params.get('year', ''))})"
         file_path = self._report_dir / f"{report_id}.pdf"
+        data: dict[str, Any] = {}
 
         try:
             if report_type == "daily_log":
@@ -148,6 +150,7 @@ class ReportService:
                 )
                 self._build_monthly_report_pdf(file_path, data)
             else:
+                data = dict(params)
                 from reportlab.lib.pagesizes import A4
                 from reportlab.pdfgen import canvas as cv
 
@@ -165,15 +168,17 @@ class ReportService:
             logger.exception("Failed building report PDF: %s", report_id)
             raise
 
+        data_snapshot_json = json.dumps(data, default=str) if data else None
+
         query = (
-            "INSERT INTO reports (report_id, title, report_type, file_path) "
-            "VALUES ($1, $2, $3, $4) "
+            "INSERT INTO reports (report_id, title, report_type, file_path, data_snapshot) "
+            "VALUES ($1, $2, $3, $4, $5::jsonb) "
             "RETURNING report_id, title, report_type, created_at, file_path"
         )
 
         try:
             async with db_pool.acquire() as conn:
-                row = await conn.fetchrow(query, report_id, title, report_type, str(file_path))
+                row = await conn.fetchrow(query, report_id, title, report_type, str(file_path), data_snapshot_json)
             if row is None:
                 raise RuntimeError("Failed inserting report metadata")
             return self._row_to_model(dict(row))
