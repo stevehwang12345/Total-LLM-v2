@@ -20,6 +20,7 @@ from ..core.exceptions import ExternalServiceError, ValidationError
 from ..models.schemas import ChatRequest
 from ..services.embedding import EmbeddingService
 from ..services.rag_agent import create_rag_graph, stream_rag_response
+from ..services.tool_agent import stream_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +46,32 @@ async def chat(
     await _ensure_conversation(db_pool, conversation_id)
     await _save_message(db_pool, conversation_id, role="user", content=message)
 
-    embedding_runtime = embedding_service
-    if not hasattr(embedding_runtime, "embed_query"):
-        embedding_runtime = EmbeddingService()
-
     async def generate() -> AsyncGenerator[str, None]:
         yield _sse({"conversation_id": conversation_id})
         assistant_parts: list[str] = []
 
         try:
-            if request.use_rag:
+            if request.use_tools:
+                async for event in stream_tool_response(
+                    db_pool=db_pool,
+                    llm_client=llm_client,
+                    model_name=model_name,
+                    message=message,
+                    conversation_id=conversation_id,
+                ):
+                    if event.get("event") in {"tool_call", "tool_result"}:
+                        yield _sse(event)
+                    if event.get("content"):
+                        token = str(event["content"])
+                        assistant_parts.append(token)
+                        yield _sse({"content": token})
+                    if event.get("done"):
+                        break
+            elif request.use_rag:
+                embedding_runtime = embedding_service
+                if not hasattr(embedding_runtime, "embed_query"):
+                    embedding_runtime = EmbeddingService()
+
                 graph = create_rag_graph(
                     qdrant_service=qdrant_service,
                     embedding_service=embedding_runtime,
