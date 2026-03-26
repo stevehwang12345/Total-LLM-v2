@@ -20,6 +20,8 @@ from total_llm.api.system import router as system_router
 from total_llm.core.config import get_settings
 from total_llm.core.exceptions import register_exception_handlers
 from total_llm.database.init import create_pool, init_db
+from total_llm.services.health_scheduler import get_scheduler  # pyright: ignore[reportMissingImports]
+from total_llm.services.report_scheduler import get_report_scheduler  # pyright: ignore[reportMissingImports]
 
 
 @asynccontextmanager
@@ -36,7 +38,7 @@ async def lifespan(app: FastAPI):
     redis_port = int(os.environ.get("REDIS_PORT", s.redis.port))
     app.state.redis = Redis(host=redis_host, port=redis_port, password=s.redis.password or None, decode_responses=True)
     try:
-        await app.state.redis.ping()
+        await app.state.redis.ping()  # pyright: ignore[reportGeneralTypeIssues]
         statuses["redis"] = "up"
     except Exception:
         pass
@@ -65,8 +67,15 @@ async def lifespan(app: FastAPI):
     statuses["vlm"] = "up"
     app.state.service_status = statuses
 
+    scheduler = get_scheduler(interval_seconds=30)
+    await scheduler.start(app.state.db_pool)
+    report_scheduler = get_report_scheduler()
+    await report_scheduler.start(app.state.db_pool)
+
     yield
 
+    await report_scheduler.stop()
+    await scheduler.stop()
     await app.state.redis.aclose()
     await app.state.db_pool.close()
 
