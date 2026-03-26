@@ -14,16 +14,20 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import base64
+import cv2
 import json
 import logging
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
-from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from total_llm.core.config import get_settings
+from total_llm.core.exceptions import VLMError, ValidationError
 from total_llm.models import schemas as schema_models
 
 logger = logging.getLogger(__name__)
@@ -314,6 +318,78 @@ class VLMService:
 
         return self._build_model(payload)
 
+    async def analyze_video(
+        self,
+        client: AsyncOpenAI,
+        video_path: str | Path,
+        location: str | None = None,
+        timestamp: datetime | None = None,
+        camera_id: str | None = None,
+    ) -> Any:
+        path = Path(video_path)
+        if not path.exists():
+            raise ValueError(f"Video file not found: {path}")
+
+        cap = cv2.VideoCapture(str(path))
+        if not cap.isOpened():
+            raise VLMError(f"프레임 추출 실패: 영상 파일을 열 수 없습니다 ({path.name})")
+
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if total_frames <= 0:
+                raise VLMError("프레임 추출 실패: 프레임 정보를 읽을 수 없습니다")
+
+            duration_sec = total_frames / fps
+            if duration_sec > 60:
+                raise ValidationError("영상 길이가 60초를 초과합니다")
+
+            keyframe_indices = sorted(
+                {
+                    0,
+                    total_frames // 3,
+                    (total_frames * 2) // 3,
+                    max(total_frames - 1, 0),
+                }
+            )
+            keyframes: list[Any] = []
+            for frame_idx in keyframe_indices:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret_kf, frame_kf = cap.read()
+                if ret_kf and frame_kf is not None:
+                    keyframes.append(frame_kf)
+
+            if not keyframes:
+                raise VLMError("프레임 추출 실패: 키프레임을 추출할 수 없습니다")
+
+            mid_frame_idx = total_frames // 2
+            cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                raise VLMError("프레임 추출 실패: 대표 프레임을 읽을 수 없습니다")
+
+            success, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not success:
+                raise VLMError("프레임 추출 실패: JPEG 인코딩 오류")
+            image_base64 = base64.b64encode(buf.tobytes()).decode("utf-8")
+        finally:
+            cap.release()
+
+        loc = location or "미상"
+        video_context = f"{loc} [영상: {duration_sec:.1f}초, 대표프레임: {mid_frame_idx}/{total_frames}]"
+
+        result = await self.analyze_image(
+            client=client,
+            image_base64=image_base64,
+            location=video_context,
+            timestamp=timestamp,
+            camera_id=camera_id,
+        )
+
+        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else dict(result)
+        payload["media_type"] = "video"
+        return self._build_model(payload)
+
     # ── QA 단일 호출 ──────────────────────────────────────────
     async def _ask_qa(
         self,
@@ -451,7 +527,7 @@ class VLMService:
     def _build_model(self, payload: dict[str, Any]) -> Any:
         try:
             return IncidentAnalysis.model_validate(payload)
-        except ValidationError:
+        except PydanticValidationError:
             logger.debug("IncidentAnalysis schema mismatch, using fallback")
 
         fields = IncidentAnalysis.model_fields

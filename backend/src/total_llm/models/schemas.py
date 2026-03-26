@@ -34,6 +34,7 @@ class AnalysisResult(BaseModel):
     timestamp: datetime | None = None
     summary: str = ""
     description: str = ""
+    media_type: str = "image"
 
 
 class DeviceModel(BaseModel):
@@ -60,11 +61,13 @@ class DocumentModel(BaseModel):
     doc_id: str
     filename: str
     size: int
+    chunk_count: int = 0
     created_at: datetime
 
 
 class ReportModel(BaseModel):
     report_id: str
     title: str
+    type: str = "security"
     created_at: datetime
     download_url: str
