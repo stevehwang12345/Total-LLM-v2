@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import asyncpg
+from fastapi.openapi.models import Example
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import FileResponse
 
@@ -16,16 +17,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 report_service = ReportService()
 
+REPORT_GENERATE_EXAMPLES: dict[str, Example] = {
+    "daily_log": Example(
+        summary="Generate daily log report",
+        value={"type": "daily_log", "params": {"date": "2026-03-26"}},
+    ),
+    "incident": Example(
+        summary="Generate incident report",
+        value={"type": "incident", "params": {"alarm_id": "alarm-uuid"}},
+    ),
+    "equipment": Example(
+        summary="Generate equipment report",
+        value={"type": "equipment", "params": {"date": "2026-03-26"}},
+    ),
+    "monthly": Example(
+        summary="Generate monthly report",
+        value={"type": "monthly", "params": {"year": "2026", "month": "3"}},
+    ),
+}
+
 
 @router.post("/generate")
 async def generate_report(
-    payload: dict | None = Body(default=None),
+    payload: dict | None = Body(default=None, openapi_examples=REPORT_GENERATE_EXAMPLES),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     settings=Depends(get_settings),
 ):
     _ = settings
     body = payload or {}
-    report_type = str(body.get("report_type") or "security").strip() or "security"
+    report_type = str(body.get("type") or body.get("report_type") or "security").strip() or "security"
     params = body.get("params") or {}
     if not isinstance(params, dict):
         raise ValidationError("params must be an object")

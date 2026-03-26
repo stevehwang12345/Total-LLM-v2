@@ -94,8 +94,8 @@ async def upload_document(
         raise ExternalServiceError("Qdrant indexing failed") from exc
 
     insert_query = (
-        "INSERT INTO documents_meta (doc_id, filename, size, content_type) "
-        "VALUES ($1, $2, $3, $4)"
+        "INSERT INTO documents_meta (doc_id, filename, size, content_type, chunk_count) "
+        "VALUES ($1, $2, $3, $4, $5)"
     )
     try:
         async with db_pool.acquire() as conn:
@@ -105,6 +105,7 @@ async def upload_document(
                 file.filename,
                 len(raw),
                 file.content_type,
+                len(chunks),
             )
     except Exception as exc:
         logger.exception("Failed storing document metadata: %s", doc_id)
@@ -135,7 +136,7 @@ async def list_documents(
 ):
     _ = settings
     query = (
-        "SELECT doc_id, filename, size, created_at "
+        "SELECT doc_id, filename, size, chunk_count, created_at "
         "FROM documents_meta ORDER BY created_at DESC LIMIT $1"
     )
     try:

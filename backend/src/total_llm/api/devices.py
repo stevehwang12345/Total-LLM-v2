@@ -16,6 +16,27 @@ router = APIRouter(prefix="/api/devices", tags=["devices"])
 device_service = DeviceService()
 
 
+@router.get("/stats")
+async def get_device_stats(
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    settings=Depends(get_settings),
+):
+    _ = settings
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) as total, "
+                "COUNT(*) FILTER (WHERE status = 'online') as online, "
+                "COUNT(*) FILTER (WHERE status = 'offline') as offline, "
+                "COUNT(*) FILTER (WHERE status NOT IN ('online','offline')) as other "
+                "FROM devices"
+            )
+        return dict(row)
+    except Exception as exc:
+        logger.exception("Failed getting device stats")
+        raise DeviceControlError("Failed getting device stats") from exc
+
+
 @router.get("")
 async def list_devices(
     device_type: str | None = Query(default=None),
@@ -33,6 +54,38 @@ async def list_devices(
     except Exception as exc:
         logger.exception("Failed listing devices")
         raise DeviceControlError("Failed listing devices") from exc
+
+
+@router.get("/{device_id}/health")
+async def get_device_health(
+    device_id: str,
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    settings=Depends(get_settings),
+):
+    _ = settings
+    try:
+        device = await device_service.get_device(db_pool, device_id)
+        return await device_service.check_device_health(device)
+    except ValueError as exc:
+        raise NotFoundError(str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed health check for %s", device_id)
+        raise DeviceControlError("Health check failed") from exc
+
+
+@router.get("/{device_id}/health/history")
+async def get_device_health_history(
+    device_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    settings=Depends(get_settings),
+):
+    _ = settings
+    try:
+        return await device_service.get_health_history(db_pool, device_id, limit)
+    except Exception as exc:
+        logger.exception("Failed getting health history for %s", device_id)
+        raise DeviceControlError("Failed getting health history") from exc
 
 
 @router.get("/{device_id}")
