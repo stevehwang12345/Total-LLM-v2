@@ -6,6 +6,7 @@ import {
   FileText,
   BarChart3,
   Shield,
+  Radar,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -40,6 +41,11 @@ export const sidebarData: SidebarData = {
           title: '장비 관리',
           url: '/devices',
           icon: Monitor,
+        },
+        {
+          title: '디스커버리',
+          url: '/discovery',
+          icon: Radar,
         },
         {
           title: '알람',

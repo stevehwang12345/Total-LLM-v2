@@ -12,6 +12,8 @@ import {
   Loader2,
   Activity,
   Clock,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
@@ -43,6 +45,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 
 export const Route = createFileRoute('/_authenticated/devices/')({
   component: DevicesPage,
@@ -88,6 +91,10 @@ function DevicesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Device | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [healthResults, setHealthResults] = useState<Record<string, HealthResult>>({})
   const [checkingHealthId, setCheckingHealthId] = useState<string | null>(null)
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null)
@@ -96,10 +103,18 @@ function DevicesPage() {
   const [formType, setFormType] = useState('CCTV')
   const [formIp, setFormIp] = useState('')
   const [formLocation, setFormLocation] = useState('')
+  const [formManufacturer, setFormManufacturer] = useState('Unknown')
+  const [formPort, setFormPort] = useState('554')
+  const [formProtocol, setFormProtocol] = useState('RTSP')
+
+  const [editType, setEditType] = useState('CCTV')
+  const [editIp, setEditIp] = useState('')
+  const [editLocation, setEditLocation] = useState('')
+  const [editStatus, setEditStatus] = useState('online')
 
   const fetchDevices = useCallback(async () => {
     try {
-      const res = await fetch('/api/devices')
+      const res = await fetch('/api/devices', { cache: 'no-store' })
       if (res.ok) {
         const data = await res.json()
         setDevices(Array.isArray(data) ? data : data.devices || [])
@@ -113,7 +128,7 @@ function DevicesPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/devices/stats')
+      const res = await fetch('/api/devices/stats', { cache: 'no-store' })
       if (res.ok) {
         setDeviceStats(await res.json())
       }
@@ -125,6 +140,38 @@ function DevicesPage() {
   useEffect(() => {
     fetchDevices()
     fetchStats()
+  }, [fetchDevices, fetchStats])
+
+  useEffect(() => {
+    const handleDevicesChanged = () => {
+      void fetchDevices()
+      void fetchStats()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchDevices()
+        void fetchStats()
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchDevices()
+        void fetchStats()
+      }
+    }, 15000)
+
+    window.addEventListener('devices:changed', handleDevicesChanged)
+    window.addEventListener('focus', handleDevicesChanged)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('devices:changed', handleDevicesChanged)
+      window.removeEventListener('focus', handleDevicesChanged)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [fetchDevices, fetchStats])
 
   const handleHealthCheck = async (deviceId: string) => {
@@ -163,9 +210,13 @@ function DevicesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           device_id: formDeviceId,
-          type: formType,
+          device_type: formType,
+          manufacturer: formManufacturer || 'Unknown',
           ip_address: formIp,
+          port: Number(formPort) || 554,
+          protocol: formProtocol || 'RTSP',
           location: formLocation,
+          status: 'online',
         }),
       })
       if (!res.ok) throw new Error(`등록 실패: ${res.status}`)
@@ -174,6 +225,9 @@ function DevicesPage() {
       setFormDeviceId('')
       setFormIp('')
       setFormLocation('')
+      setFormManufacturer('Unknown')
+      setFormPort('554')
+      setFormProtocol('RTSP')
       fetchDevices()
     } catch (err) {
       const message = err instanceof Error ? err.message : '등록 중 오류 발생'
@@ -183,10 +237,74 @@ function DevicesPage() {
     }
   }
 
+  const handleOpenEdit = (device: Device) => {
+    setEditingDevice(device)
+    setEditType(device.device_type)
+    setEditIp(device.ip_address)
+    setEditLocation(device.location)
+    setEditStatus(device.status)
+    setEditDialogOpen(true)
+  }
+
+  const handleUpdateDevice = async () => {
+    if (!editingDevice) return
+    try {
+      const res = await fetch(`/api/devices/${editingDevice.device_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_type: editType,
+          ip_address: editIp,
+          location: editLocation,
+          status: editStatus,
+        }),
+      })
+      if (!res.ok) throw new Error(`수정 실패: ${res.status}`)
+      toast.success('장비 정보 수정 완료')
+      setEditDialogOpen(false)
+      setEditingDevice(null)
+      await fetchDevices()
+      await fetchStats()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '수정 중 오류'
+      toast.error('장비 수정 실패', { description: message })
+    }
+  }
+
+  const handleDeleteDevice = async () => {
+    if (!deleteTarget) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/devices/${deleteTarget.device_id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error(`삭제 실패: ${res.status}`)
+      toast.success('장비 삭제 완료', { description: deleteTarget.device_id })
+      setDeleteTarget(null)
+      await fetchDevices()
+      await fetchStats()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '삭제 중 오류'
+      toast.error('장비 삭제 실패', { description: message })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const DeviceIcon = ({ type }: { type: string }) => {
     if (type === 'CCTV' || type === 'cctv') return <Cctv className='size-5' />
     if (type === 'ACU' || type === 'acu') return <DoorOpen className='size-5' />
     return <Monitor className='size-5' />
+  }
+
+  const getRegistrationBadge = (location: string) => {
+    if (location === 'Auto-Discovered') {
+      return { variant: 'default' as const, label: '자동' }
+    }
+    if (location.includes('Manual') || location === 'Manual') {
+      return { variant: 'destructive' as const, label: '수동 확인' }
+    }
+    return { variant: 'secondary' as const, label: '기존' }
   }
 
   const statusSummary = deviceStats ?? {
@@ -249,6 +367,35 @@ function DevicesPage() {
                     value={formIp}
                     onChange={(e) => setFormIp(e.target.value)}
                   />
+                </div>
+                <div className='grid gap-2'>
+                  <Label htmlFor='manufacturer'>제조사</Label>
+                  <Input
+                    id='manufacturer'
+                    placeholder='예: Hanwha Vision'
+                    value={formManufacturer}
+                    onChange={(e) => setFormManufacturer(e.target.value)}
+                  />
+                </div>
+                <div className='grid grid-cols-2 gap-3'>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='device-port'>포트</Label>
+                    <Input
+                      id='device-port'
+                      placeholder='554'
+                      value={formPort}
+                      onChange={(e) => setFormPort(e.target.value)}
+                    />
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label htmlFor='device-protocol'>프로토콜</Label>
+                    <Input
+                      id='device-protocol'
+                      placeholder='RTSP'
+                      value={formProtocol}
+                      onChange={(e) => setFormProtocol(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <div className='grid gap-2'>
                   <Label htmlFor='location'>설치 위치</Label>
@@ -390,19 +537,24 @@ function DevicesPage() {
                       <Wifi className='size-3.5' />
                       {device.ip_address}
                     </div>
-                    <div className='flex items-center gap-1.5 text-sm text-muted-foreground'>
-                      <MapPin className='size-3.5' />
-                      {device.location}
-                    </div>
+                     <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+                       <div className='flex items-center gap-1.5'>
+                         <MapPin className='size-3.5' />
+                         {device.location}
+                       </div>
+                       <Badge variant={getRegistrationBadge(device.location).variant} className='text-xs'>
+                         {getRegistrationBadge(device.location).label}
+                       </Badge>
+                     </div>
                     {device.last_health_check && (
                       <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
                         <Clock className='size-3' />
                         헬스체크: {new Date(device.last_health_check).toLocaleString('ko-KR')}
                       </div>
                     )}
-                    <div className='flex items-center gap-2 pt-1'>
-                      <Button
-                        size='sm'
+                     <div className='flex items-center gap-2 pt-1'>
+                       <Button
+                         size='sm'
                         variant='outline'
                         className='h-7 gap-1 px-2 text-xs'
                         onClick={(e) => {
@@ -416,9 +568,33 @@ function DevicesPage() {
                         ) : (
                           <Activity className='size-3' />
                         )}
-                        헬스체크
-                      </Button>
-                    </div>
+                         헬스체크
+                       </Button>
+                       <Button
+                         size='sm'
+                         variant='outline'
+                         className='h-7 gap-1 px-2 text-xs'
+                         onClick={(e) => {
+                           e.stopPropagation()
+                           handleOpenEdit(device)
+                         }}
+                       >
+                         <Pencil className='size-3' />
+                         수정
+                       </Button>
+                       <Button
+                         size='sm'
+                         variant='outline'
+                         className='h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive'
+                         onClick={(e) => {
+                           e.stopPropagation()
+                           setDeleteTarget(device)
+                         }}
+                       >
+                         <Trash2 className='size-3' />
+                         삭제
+                       </Button>
+                     </div>
                     {healthResults[device.device_id] && (
                       <div className={cn(
                         'rounded-md p-2 text-xs',
@@ -450,6 +626,70 @@ function DevicesPage() {
             })}
           </div>
         )}
+
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>장비 정보 수정</DialogTitle>
+              <DialogDescription>
+                {editingDevice?.device_id} 설정을 업데이트합니다
+              </DialogDescription>
+            </DialogHeader>
+            <div className='grid gap-4 py-4'>
+              <div className='grid gap-2'>
+                <Label>장비 유형</Label>
+                <Select value={editType} onValueChange={setEditType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='CCTV'>CCTV</SelectItem>
+                    <SelectItem value='ACU'>ACU</SelectItem>
+                    <SelectItem value='Unknown'>Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='grid gap-2'>
+                <Label htmlFor='edit-ip'>IP 주소</Label>
+                <Input id='edit-ip' value={editIp} onChange={(e) => setEditIp(e.target.value)} />
+              </div>
+              <div className='grid gap-2'>
+                <Label htmlFor='edit-location'>위치</Label>
+                <Input id='edit-location' value={editLocation} onChange={(e) => setEditLocation(e.target.value)} />
+              </div>
+              <div className='grid gap-2'>
+                <Label>상태</Label>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='online'>online</SelectItem>
+                    <SelectItem value='offline'>offline</SelectItem>
+                    <SelectItem value='maintenance'>maintenance</SelectItem>
+                    <SelectItem value='error'>error</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant='outline' onClick={() => setEditDialogOpen(false)}>취소</Button>
+              <Button onClick={handleUpdateDevice}>저장</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <ConfirmDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title='장비 삭제'
+          desc={`"${deleteTarget?.device_id}" 장비를 삭제하시겠습니까?`}
+          confirmText='삭제'
+          cancelBtnText='취소'
+          destructive
+          isLoading={isDeleting}
+          handleConfirm={handleDeleteDevice}
+        />
       </Main>
     </>
   )

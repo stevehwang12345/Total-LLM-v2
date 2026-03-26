@@ -29,7 +29,7 @@ export const Route = createFileRoute('/_authenticated/chat/')({
 
 interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: Date
 }
@@ -39,6 +39,7 @@ function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [useRag, setUseRag] = useState(true)
+  const [useTools, setUseTools] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -88,6 +89,7 @@ function ChatPage() {
           message: trimmed,
           conversation_id: conversationId,
           use_rag: useRag,
+          use_tools: useTools,
         }),
         signal: abortRef.current.signal,
       })
@@ -120,6 +122,28 @@ function ChatPage() {
 
             if (parsed.conversation_id) {
               setConversationId(parsed.conversation_id)
+            }
+            if (parsed.event === 'tool_call') {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+                  role: 'tool',
+                  content: `🛠️ 도구 호출: ${parsed.tool_name}(${JSON.stringify(parsed.arguments ?? {})})`,
+                  timestamp: new Date(),
+                },
+              ])
+            }
+            if (parsed.event === 'tool_result') {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+                  role: 'tool',
+                  content: `✅ 도구 결과: ${parsed.tool_name}\n${JSON.stringify(parsed.result ?? {}, null, 2)}`,
+                  timestamp: new Date(),
+                },
+              ])
             }
             if (parsed.content) {
               setMessages((prev) =>
@@ -194,6 +218,16 @@ function ChatPage() {
                 RAG 모드
               </Label>
             </div>
+            <div className='flex items-center gap-2'>
+              <Switch
+                id='tools-mode'
+                checked={useTools}
+                onCheckedChange={setUseTools}
+              />
+              <Label htmlFor='tools-mode' className='text-sm'>
+                도구 모드
+              </Label>
+            </div>
             <Button variant='outline' size='sm' onClick={handleNewChat}>
               <RotateCcw className='size-4' />
               새 대화
@@ -252,11 +286,15 @@ function ChatPage() {
                     'flex size-8 shrink-0 items-center justify-center rounded-lg',
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground'
+                      : msg.role === 'tool'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+                        : 'bg-muted text-muted-foreground'
                   )}
                 >
                   {msg.role === 'user' ? (
                     <User className='size-4' />
+                  ) : msg.role === 'tool' ? (
+                    <Sparkles className='size-4' />
                   ) : (
                     <Bot className='size-4' />
                   )}
@@ -266,7 +304,9 @@ function ChatPage() {
                     'max-w-[80%] gap-0 py-0',
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50'
+                      : msg.role === 'tool'
+                        ? 'border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10'
+                        : 'bg-muted/50'
                   )}
                 >
                   <CardContent className='px-4 py-3'>

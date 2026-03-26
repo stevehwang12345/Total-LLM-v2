@@ -18,6 +18,7 @@ import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as AuthenticatedReportsIndexRouteImport } from './routes/_authenticated/reports/index'
 import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
+import { Route as AuthenticatedDiscoveryIndexRouteImport } from './routes/_authenticated/discovery/index'
 import { Route as AuthenticatedDevicesIndexRouteImport } from './routes/_authenticated/devices/index'
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat/index'
 import { Route as AuthenticatedAnalysisIndexRouteImport } from './routes/_authenticated/analysis/index'
@@ -69,6 +70,12 @@ const AuthenticatedDocumentsIndexRoute =
     path: '/documents/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedDiscoveryIndexRoute =
+  AuthenticatedDiscoveryIndexRouteImport.update({
+    id: '/discovery/',
+    path: '/discovery/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDevicesIndexRoute =
   AuthenticatedDevicesIndexRouteImport.update({
     id: '/devices/',
@@ -104,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/analysis/': typeof AuthenticatedAnalysisIndexRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
   '/devices/': typeof AuthenticatedDevicesIndexRoute
+  '/discovery/': typeof AuthenticatedDiscoveryIndexRoute
   '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/reports/': typeof AuthenticatedReportsIndexRoute
 }
@@ -118,6 +126,7 @@ export interface FileRoutesByTo {
   '/analysis': typeof AuthenticatedAnalysisIndexRoute
   '/chat': typeof AuthenticatedChatIndexRoute
   '/devices': typeof AuthenticatedDevicesIndexRoute
+  '/discovery': typeof AuthenticatedDiscoveryIndexRoute
   '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/reports': typeof AuthenticatedReportsIndexRoute
 }
@@ -134,6 +143,7 @@ export interface FileRoutesById {
   '/_authenticated/analysis/': typeof AuthenticatedAnalysisIndexRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
   '/_authenticated/devices/': typeof AuthenticatedDevicesIndexRoute
+  '/_authenticated/discovery/': typeof AuthenticatedDiscoveryIndexRoute
   '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
 }
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/analysis/'
     | '/chat/'
     | '/devices/'
+    | '/discovery/'
     | '/documents/'
     | '/reports/'
   fileRoutesByTo: FileRoutesByTo
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/analysis'
     | '/chat'
     | '/devices'
+    | '/discovery'
     | '/documents'
     | '/reports'
   id:
@@ -179,6 +191,7 @@ export interface FileRouteTypes {
     | '/_authenticated/analysis/'
     | '/_authenticated/chat/'
     | '/_authenticated/devices/'
+    | '/_authenticated/discovery/'
     | '/_authenticated/documents/'
     | '/_authenticated/reports/'
   fileRoutesById: FileRoutesById
@@ -257,6 +270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDocumentsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/discovery/': {
+      id: '/_authenticated/discovery/'
+      path: '/discovery'
+      fullPath: '/discovery/'
+      preLoaderRoute: typeof AuthenticatedDiscoveryIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/devices/': {
       id: '/_authenticated/devices/'
       path: '/devices'
@@ -294,6 +314,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnalysisIndexRoute: typeof AuthenticatedAnalysisIndexRoute
   AuthenticatedChatIndexRoute: typeof AuthenticatedChatIndexRoute
   AuthenticatedDevicesIndexRoute: typeof AuthenticatedDevicesIndexRoute
+  AuthenticatedDiscoveryIndexRoute: typeof AuthenticatedDiscoveryIndexRoute
   AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
 }
@@ -304,6 +325,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnalysisIndexRoute: AuthenticatedAnalysisIndexRoute,
   AuthenticatedChatIndexRoute: AuthenticatedChatIndexRoute,
   AuthenticatedDevicesIndexRoute: AuthenticatedDevicesIndexRoute,
+  AuthenticatedDiscoveryIndexRoute: AuthenticatedDiscoveryIndexRoute,
   AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
 }
