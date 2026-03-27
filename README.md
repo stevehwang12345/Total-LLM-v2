@@ -134,21 +134,25 @@ Total-LLM v2는 **CCTV · 출입통제장치(ACU) 등 물리 보안 장비**를 
 | **OS** | Ubuntu 22.04+ / RHEL 8+ / Rocky Linux 9+ (x86_64) |
 | **CPU** | 8코어 이상 |
 | **RAM** | 32GB 이상 |
-| **GPU** | NVIDIA GPU 24GB+ VRAM (A5000, RTX 4090, A100 등) |
-| **디스크** | 100GB 이상 여유 (모델 캐시 + DB 데이터) |
+| **GPU** | NVIDIA GPU **16GB+ VRAM** (RTX A4000, RTX 4080 등) |
+| **디스크** | 100GB 이상 여유 (모델 캐시 ~18GB + DB 데이터) |
 | **Docker** | Docker Engine 24.0+ |
 | **Docker Compose** | v2.20+ |
 | **NVIDIA Driver** | 535+ |
 | **CUDA** | 12.1+ |
 
+> **참고**: Qwen3.5-9B (fp8 양자화) 모델은 약 10~12GB VRAM을 사용하므로 16GB GPU에서 동작 가능합니다.
+
 ### 권장 사양
 
 | 항목 | 권장 |
 |------|------|
-| **GPU** | NVIDIA A100 40GB 또는 RTX 4090 24GB |
+| **GPU** | NVIDIA RTX 4000 Ada 20GB 또는 RTX 4090 24GB |
 | **RAM** | 64GB |
 | **디스크** | NVMe SSD 500GB+ |
 | **네트워크** | 스캔 대상과 동일 L2 세그먼트 (ARP 스캔용) |
+
+> **실제 검증 환경**: RTX 4000 Ada 20GB × 2, RAM 252GB, 32코어, NVMe 870GB
 
 ---
 
