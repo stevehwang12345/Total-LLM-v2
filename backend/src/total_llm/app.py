@@ -59,6 +59,18 @@ async def lifespan(app: FastAPI):
     app.state.qdrant_service = qdrant_svc
     statuses["qdrant"] = "up"
 
+    if app.state.embedding_service is not None:
+        from total_llm.database.seed import seed_documents
+        try:
+            await seed_documents(
+                db_pool=app.state.db_pool,
+                qdrant_service=app.state.qdrant_service,
+                embedding_service=app.state.embedding_service,
+                settings=s,
+            )
+        except Exception:
+            logger.exception("Document auto-seed failed (non-fatal)")
+
     llm_base = os.environ.get("VLLM_BASE_URL", s.llm.base_url)
     vlm_base = os.environ.get("VLM_BASE_URL", s.vlm.base_url)
     llm = AsyncOpenAI(base_url=llm_base, api_key="dummy")

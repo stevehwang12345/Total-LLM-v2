@@ -619,6 +619,292 @@ docker compose logs backend | grep -i "profile\|llm"
 
 ---
 
+## LLM 동작 방식 및 프롬프트 상세
+
+Total-LLM v2는 기능별로 **Qwen3.5-9B 모델**을 다르게 활용합니다.
+
+---
+
+### 1. RAG 채팅 에이전트 (LangGraph Agentic RAG)
+
+**파일**: `backend/src/total_llm/services/rag_agent.py`
+
+질문 하나당 **최대 5번의 LLM 호출**로 구성된 자기수정(self-correction) 파이프라인입니다.
+
+#### 그래프 구조
+
+```
+시작 → [쿼리 분류] → [문서 검색] → [문서 관련도 평가] → [생성 여부 결정]
+                                                              ↙         ↘
+                                                     [쿼리 재작성]   [응답 생성]
+                                                            ↓              ↓
+                                                        [재검색]   [응답 품질 평가]
+                                                                         ↙      ↘
+                                                                    [출력]  [쿼리 재작성]
+```
+
+#### 호출 1 — 쿼리 복잡도 분류
+
+```
+[System]
+You classify user queries for retrieval complexity.
+Return strict JSON with key route only.
+
+[User]
+Choose one route: simple, hybrid, complex.
+simple: straightforward factual question
+hybrid: requires moderate context synthesis
+complex: multi-step reasoning, broad context, or analytical task
+
+Query: {user_query}
+Return JSON: {"route":"simple|hybrid|complex"}
+```
+
+검색량 결정: `simple` → 4개, `hybrid` → 8개, `complex` → 12개
+
+#### 호출 2 — 문서 관련도 평가 (검색된 문서 수만큼 반복)
+
+```
+[System]
+You score relevance between query and candidate document chunk.
+Return strict JSON only.
+
+[User]
+Query: {query}
+Document: {document_text}
+Return JSON: {"score":0..1,"relevant":true|false,"reason":"..."}
+```
+
+임계값: `score ≥ 0.55` → 관련 문서로 분류
+
+#### 호출 3 — 쿼리 재작성 (관련 문서 부족 시, 최대 2회)
+
+```
+[System]
+You rewrite search queries to improve retrieval quality while preserving intent.
+Return strict JSON only.
+
+[User]
+Original query: {query}
+Reason: {insufficient_retrieval | generation_quality}
+Current snippets: {현재 검색된 문서 요약}
+Return JSON: {"rewritten_query":"..."}
+```
+
+#### 호출 4 — 응답 생성 (스트리밍)
+
+```
+[System]
+You are a careful RAG assistant. Provide grounded answers only.
+
+[User]
+Answer the user question using only the retrieved context.
+If information is insufficient, state exactly what is missing.
+Cite source tags like [source:...].
+
+Question: {query}
+
+Retrieved context:
+[source:파일명]
+{문서 청크 내용}
+...
+```
+
+Temperature: `0.2` / SSE 토큰 단위 실시간 스트리밍
+
+#### 호출 5 — 응답 품질 평가
+
+```
+[System]
+You are a strict evaluator for grounded RAG answers.
+Return strict JSON only.
+
+[User]
+User query: {query}
+Retrieved evidence: {관련 문서}
+Assistant answer: {생성된 응답}
+Evaluate groundedness and usefulness.
+Return JSON: {"grounded":true|false,"helpful":true|false,"score":0..1,"reason":"..."}
+```
+
+`score ≥ 0.6` 통과 시 출력, 미달 시 쿼리 재작성 후 재시도 (최대 2회)
+
+---
+
+### 2. VLM 영상·이미지 분석 (4-QA 병렬 파이프라인)
+
+**파일**: `backend/src/total_llm/services/vlm_service.py`
+
+이미지/영상 1개당 **5번의 LLM 호출** (4개 병렬 + 1개 통합).
+
+#### 공통 시스템 프롬프트 (모든 QA 호출 공유)
+
+```
+당신은 물리보안 관제 시스템(VMS)에서 15년 경력의 시니어 보안 분석가이자 컴퓨터 비전 전문가이다.
+CCTV 영상 분석을 통해 보안 이벤트를 탐지하고, 실제 관제센터에서 즉시 사용할 수 있는 수준의 분석 보고서를 작성한다.
+
+[분석 원칙]
+- 객관적 사실 기반 작성 (추측 최소화, 근거 명시)
+- 관제 보고서 스타일 유지 (간결 + 명확 + 정량적)
+- 불필요한 감정 표현 금지
+- 불확실한 경우 "확인 불가" 또는 "추가 확인 필요"로 명시
+```
+
+#### Phase 1: 4개 QA 병렬 호출 (`asyncio.gather`)
+
+| QA | 분석 영역 | 주요 항목 |
+|----|-----------|-----------|
+| Q1 | 장면 분석 | 환경 유형, 조명, 카메라 화각, 시설물 |
+| Q2 | 행동 분석 | 인원 수, 행동 유형, 이상 행동 여부 |
+| Q3 | 객체·인물 | 인물 복장, 차량, 방치 물품, 위치 관계 |
+| Q4 | 환경·맥락 | 시간대, 구역 특성, 보안 장비, 취약 요소 |
+
+#### Phase 2: 통합 보고서 생성 (5번째 호출)
+
+4개 QA 결과를 받아 **6섹션 표준 관제 보고서** 생성:
+
+```
+1. 장면 요약
+2. 객체 및 환경 분석
+3. 행동 분석
+4. 이벤트 정의 (16개 카테고리 중 선택)
+5. 위험도 평가 (1~5단계)
+6. 대응 방안 (즉시 조치 + 후속 조치 + SOP 참조)
+```
+
+#### 이벤트 카테고리 (16개, UCF-Crime 기반 + 물리보안 확장)
+
+| 위험도 | 카테고리 | SOP |
+|--------|---------|-----|
+| 1 (정보) | 정상활동 | — |
+| 2 (낮음) | 배회, 무단주차 | SOP-L2 |
+| 3 (중간) | 비정상행동, 도난/절도, 기물파손, 물품방치, 군중밀집 | SOP-L3 |
+| 4 (높음) | 위협행위, 싸움, 침입, 추적/도주, 넘어짐/낙상 | SOP-L4 |
+| 5 (매우높음) | 폭력, 방화, 폭발 | SOP-L5 |
+
+**위험도 3 이상** → 알람 자동 생성
+
+---
+
+### 3. 디바이스 프로파일링 + 정합성 재검증
+
+**파일**: `backend/src/total_llm/services/profiling_service.py`
+
+#### 1차 프로파일링
+
+```
+[System]
+You are a network security device profiler.
+Infer the most likely device profile from scan evidence.
+Always return strict JSON only.
+
+[User]
+Analyze this discovered device and infer profile fields.
+Use conservative confidence when evidence is weak.
+{스캔 증거 JSON: ip, mac, vendor, open_ports, onvif_info, mdns_info, http_banner, hostname}
+```
+
+응답 스키마 (JSON Schema 강제):
+
+```json
+{
+  "device_type": "CCTV | ACU | ...",
+  "manufacturer": "제조사명",
+  "model_name": "모델명",
+  "protocol": "RTSP | Modbus | ...",
+  "confidence": 0.0 ~ 1.0,
+  "reasoning": "판단 근거",
+  "suggested_device_id": "CCTV-001 등 제안 ID"
+}
+```
+
+#### 2차 재검증 (정합성 실패 시 자동 실행, 최대 1회)
+
+```
+[System]
+You are re-verifying a network security device profile.
+A previous analysis had inconsistencies with scan evidence.
+Re-analyze carefully and correct any mistakes.
+Always return strict JSON only.
+
+[User]
+Re-analyze this device profile. The previous analysis had inconsistencies.
+
+Scan evidence: {스캔 증거}
+Previous profile: {1차 프로파일 결과}
+Inconsistencies found:
+  device_type: expected CCTV, got ACU (evidence: port 554 open); ...
+
+Please re-analyze considering the scan evidence and the inconsistencies listed above.
+Use conservative confidence when evidence is weak.
+```
+
+Temperature: `0.1` (결정론적 분류 우선)
+
+---
+
+### 4. Function Calling 채팅 에이전트
+
+**파일**: `backend/src/total_llm/services/tool_agent.py`
+
+도구 모드에서 **2번의 LLM 호출**로 동작합니다.
+
+#### 1차 호출 — 도구 선택
+
+```
+[System]
+You are a security operations assistant.
+When needed, call tools to retrieve exact device/scan data.
+Answer in concise Korean unless the user requests another language.
+
+[User]
+{사용자 메시지}
+
+[Tools]
+- list_devices(status?, device_type?, limit?)
+- get_device_health(device_id)
+- get_device_health_history(device_id, limit?)
+- list_scan_sessions(limit?, status?)
+```
+
+#### 2차 호출 — 도구 결과 기반 자연어 응답 (스트리밍)
+
+```
+[이전 메시지 히스토리]
++ [Tool] {tool_call_id}: {도구 실행 결과 JSON}
+→ LLM이 결과를 해석하여 한국어로 자연스럽게 답변
+```
+
+Temperature: `0.1` / vLLM 설정: `--enable-auto-tool-choice --tool-call-parser qwen3_xml`
+
+---
+
+### 5. RAG 자동 시드 (서버 기동 시)
+
+**파일**: `backend/src/total_llm/database/seed.py`
+
+서버 기동 시 `data/documents/` 폴더의 문서를 자동 임베딩·인덱싱합니다.
+
+```
+서버 기동 → DB 초기화 → Qdrant 컬렉션 확인 → Embedding 모델 로드
+                                                       ↓
+                                              seed_documents() 호출
+                                                       ↓
+                                          data/documents/*.md/*.txt 스캔
+                                                       ↓
+                                          이미 등록된 파일 건너뜀 (멱등성)
+                                                       ↓
+                                          새 파일: 500자 청크 분할 → 임베딩
+                                                       ↓
+                                          Qdrant 인덱싱 + PostgreSQL 메타 저장
+```
+
+- 지원 형식: `.md`, `.txt`
+- 청크 크기: 500자, 오버랩 50자
+- 실패 허용: 개별 파일 오류 시 로그만 남기고 계속 진행 (서버 기동 방해 안 함)
+
+---
+
 ## 라이선스
 
 이 프로젝트는 내부 사용 목적으로 개발되었습니다.
