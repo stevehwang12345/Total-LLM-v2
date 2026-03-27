@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 .env
 data/
+!data/documents/
 *.egg-info/
 .venv/
 .sisyphus/
