@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "total-llm"
 version = "2.0.0"
-description = "Total-LLM v2 backend"
+description = "Total-LLM AI 프로토타입 backend"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.124",

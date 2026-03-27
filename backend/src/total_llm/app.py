@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     await app.state.db_pool.close()
 
 
-app = FastAPI(title="Total-LLM v2", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Total-LLM AI 프로토타입", version="2.0.0", lifespan=lifespan)
 settings = get_settings()
 
 app.add_middleware(

@@ -18,7 +18,7 @@ export const sidebarData: SidebarData = {
   },
   teams: [
     {
-      name: 'Total-LLM',
+      name: 'Total-LLM AI 프로토타입',
       logo: Shield,
       plan: '보안 모니터링',
     },
