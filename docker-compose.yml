@@ -40,7 +40,7 @@ services:
       test:
         [
           "CMD",
-          "python",
+          "python3",
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:9000/v1/models', timeout=5).read()",
         ]
@@ -60,7 +60,7 @@ services:
     volumes:
       - ./data/qdrant_storage:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -133,6 +133,7 @@ services:
       - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
       - ./data/uploads:/app/data/uploads
       - ./data/reports:/app/data/reports
+      - ./data/documents:/app/data/documents
     depends_on:
       vllm:
         condition: service_started

@@ -13,8 +13,8 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-# backend/src/total_llm/database/seed.py → 프로젝트 루트/data/documents
-DOCUMENTS_DIR = Path(__file__).resolve().parents[5] / "data" / "documents"
+# /app/src/total_llm/database/seed.py → parents[3] = /app → /app/data/documents
+DOCUMENTS_DIR = Path(__file__).resolve().parents[3] / "data" / "documents"
 
 
 async def seed_documents(
